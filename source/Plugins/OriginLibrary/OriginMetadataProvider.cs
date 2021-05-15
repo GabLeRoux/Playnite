@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 using OriginLibrary.Models;
 using OriginLibrary.Services;
+using Playnite.Common.Media.Icons;
 using Playnite.SDK;
 using Playnite.SDK.Metadata;
 using Playnite.SDK.Models;
@@ -82,33 +83,6 @@ namespace OriginLibrary
                         Name = "Manual"
                     }
                 };
-            }
-
-            // There's not icon available on Origin servers so we will load one from EXE
-            if (game.IsInstalled && string.IsNullOrEmpty(game.Icon))
-            {
-                var playAction = library.PlayniteApi.ExpandGameVariables(game, game.PlayAction);
-                var executable = string.Empty;
-                if (File.Exists(playAction.Path))
-                {
-                    executable = playAction.Path;
-                }
-                else if (!string.IsNullOrEmpty(playAction.WorkingDir))
-                {
-                    executable = Path.Combine(playAction.WorkingDir, playAction.Path);
-                }
-
-                if (string.IsNullOrEmpty(executable))
-                {
-                    return storeMetadata;
-                }
-
-                var exeIcon = IconExtension.ExtractIconFromExe(executable, true);
-                if (exeIcon != null)
-                {
-                    var iconName = Guid.NewGuid() + ".png";
-                    metadata.Icon = new MetadataFile(iconName, exeIcon.ToByteArray(System.Drawing.Imaging.ImageFormat.Png));
-                }
             }
 
             return metadata;

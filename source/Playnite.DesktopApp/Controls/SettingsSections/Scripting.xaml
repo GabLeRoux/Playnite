@@ -4,7 +4,9 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
-             xmlns:psdk="clr-namespace:Playnite.SDK;assembly=Playnite.SDK"             
+             xmlns:psdk="clr-namespace:Playnite.SDK;assembly=Playnite.SDK"
+             xmlns:pcon="clr-namespace:Playnite.Converters;assembly=Playnite" 
+             xmlns:pcmd="clr-namespace:Playnite.Commands;assembly=Playnite"          
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="800">
     
@@ -17,12 +19,18 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <StackPanel Orientation="Horizontal" Grid.Row="0">
+            <TextBlock Text="{DynamicResource LOCSettingsScriptingNotice}"
+                       Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+            <DockPanel Grid.Row="1" Margin="0,5,0,5" LastChildFill="False">
                 <TextBlock Text="{DynamicResource LOCScriptRuntime}" VerticalAlignment="Center" />
                 <ComboBox Margin="5,0,0,0" VerticalAlignment="Center"
                                   SelectedValue="{Binding Settings.ActionsScriptLanguage}">
@@ -33,17 +41,31 @@
                             <psdk:ScriptLanguage>IronPython</psdk:ScriptLanguage>
                         </x:Array>
                     </ComboBox.ItemsSource>
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Converter={pcon:ObjectToStringConverter}}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
                 </ComboBox>
-            </StackPanel>
+                <Button Content="{DynamicResource LOCMenuHelpTitle}" DockPanel.Dock="Right"
+                        Command="{x:Static pcmd:GlobalCommands.NavigateUrlCommand}"
+                        CommandParameter="https://github.com/JosefNemec/Playnite/wiki/Game-scripts" />
+            </DockPanel>
 
-            <TextBlock Text="{DynamicResource LOCPreScriptDescription}" Grid.Row="1" Margin="0,5,0,5" />
-            <TextBox AcceptsReturn="True" Grid.Row="2"
+            <TextBlock Text="{DynamicResource LOCPreScriptDescription}" Grid.Row="2" Margin="0,5,0,5" />
+            <TextBox AcceptsReturn="True" Grid.Row="3"
                              HorizontalScrollBarVisibility="Auto"
                              VerticalScrollBarVisibility="Visible"
                              Text="{Binding Settings.PreScript}" />
 
-            <TextBlock Text="{DynamicResource LOCPostScriptDescription}" Grid.Row="3" Margin="0,5,0,5" />
-            <TextBox AcceptsReturn="True" Grid.Row="4"
+            <TextBlock Text="{DynamicResource LOCGameStartedScriptDescription}" Grid.Row="4" Margin="0,5,0,5" />
+            <TextBox AcceptsReturn="True" Grid.Row="5"
+                             HorizontalScrollBarVisibility="Auto"
+                             VerticalScrollBarVisibility="Visible"
+                             Text="{Binding Settings.GameStartedScript}"/>
+
+            <TextBlock Text="{DynamicResource LOCPostScriptDescription}" Grid.Row="6" Margin="0,5,0,5" />
+            <TextBox AcceptsReturn="True" Grid.Row="7"
                              HorizontalScrollBarVisibility="Auto"
                              VerticalScrollBarVisibility="Visible"
                              Text="{Binding Settings.PostScript}"/>

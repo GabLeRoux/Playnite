@@ -20,6 +20,8 @@ using Newtonsoft.Json.Serialization;
 using System.Runtime.Serialization;
 using Playnite.Metadata;
 using Playnite.SDK;
+using Microsoft.Win32;
+using Playnite.SDK.Models;
 
 namespace Playnite
 {
@@ -34,6 +36,12 @@ namespace Playnite
     {
         None,
         Restore
+    }
+
+    public enum ApplicationView
+    {
+        Library,
+        Statistics
     }
 
     public enum TrayIconType
@@ -107,7 +115,7 @@ namespace Playnite
         public int Version
         {
             get; set;
-        } = 3;
+        } = 5;
 
         private DetailsVisibilitySettings detailsVisibility = new DetailsVisibilitySettings();
         public DetailsVisibilitySettings DetailsVisibility
@@ -220,21 +228,6 @@ namespace Playnite
             set
             {
                 gridViewDetailsPosition = value;
-                OnPropertyChanged();
-            }
-        }
-
-        private Dock sideBarPosition = Dock.Left;
-        public Dock SideBarPosition
-        {
-            get
-            {
-                return sideBarPosition;
-            }
-
-            set
-            {
-                sideBarPosition = value;
                 OnPropertyChanged();
             }
         }
@@ -377,17 +370,7 @@ namespace Playnite
         [JsonIgnore]
         public double GridItemHeight
         {
-            get
-            {
-                if (GridItemWidth != 0)
-                {
-                    return GridItemWidth * ((double)gridItemHeightRatio / GridItemWidthRatio);
-                }
-                else
-                {
-                    return 0;
-                }
-            }
+            get; private set;
         }
 
         private double gridItemWidth = ViewSettings.DefaultGridItemWidth;
@@ -400,16 +383,16 @@ namespace Playnite
 
             set
             {
-                gridItemWidth = value;
+                gridItemWidth = Math.Round(value);
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(GridItemHeight));
+                UpdateGridItemHeight();
             }
         }
 
         [JsonIgnore]
         public AspectRatio CoverAspectRatio => new AspectRatio(GridItemWidthRatio, GridItemHeightRatio);
 
-        private int gridItemWidthRatio = 27;
+        private int gridItemWidthRatio = 3;
         public int GridItemWidthRatio
         {
             get
@@ -421,12 +404,12 @@ namespace Playnite
             {
                 gridItemWidthRatio = value;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(GridItemHeight));
+                UpdateGridItemHeight();
                 OnPropertyChanged(nameof(CoverAspectRatio));
             }
         }
 
-        private int gridItemHeightRatio = 38;
+        private int gridItemHeightRatio = 4;
         public int GridItemHeightRatio
         {
             get
@@ -438,7 +421,7 @@ namespace Playnite
             {
                 gridItemHeightRatio = value;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(GridItemHeight));
+                UpdateGridItemHeight();
                 OnPropertyChanged(nameof(CoverAspectRatio));
             }
         }
@@ -566,7 +549,7 @@ namespace Playnite
             }
         }
 
-        private bool asyncImageLoading = false;
+        private bool asyncImageLoading = true;
         [RequiresRestart]
         public bool AsyncImageLoading
         {
@@ -596,7 +579,6 @@ namespace Playnite
                 OnPropertyChanged();
             }
         }
-
 
         private bool showNamesUnderCovers = false;
         public bool ShowNamesUnderCovers
@@ -733,21 +715,6 @@ namespace Playnite
             }
         }
 
-        private bool migrationV2PcPlatformAdded = false;
-        public bool MigrationV2PcPlatformAdded
-        {
-            get
-            {
-                return migrationV2PcPlatformAdded;
-            }
-
-            set
-            {
-                migrationV2PcPlatformAdded = value;
-                OnPropertyChanged();
-            }
-        }
-
         private bool showIconsOnList = true;
         public bool ShowIconsOnList
         {
@@ -866,7 +833,7 @@ namespace Playnite
                 OnPropertyChanged();
             }
         }
-                
+
         private bool notificationPanelVisible = false;
         [JsonIgnore]
         public bool NotificationPanelVisible
@@ -884,7 +851,6 @@ namespace Playnite
         }
 
         private bool sidebarVisible = false;
-        [JsonIgnore]
         public bool SidebarVisible
         {
             get
@@ -900,7 +866,6 @@ namespace Playnite
         }
 
         private Dock sidebarPosition = Dock.Left;
-        [JsonIgnore]
         public Dock SidebarPosition
         {
             get
@@ -1321,7 +1286,7 @@ namespace Playnite
                 textFormattingMode = value;
                 OnPropertyChanged();
             }
-        } 
+        }
 
         private TextRenderingModeOptions textRenderingMode = TextRenderingModeOptions.Auto;
         [RequiresRestart]
@@ -1354,7 +1319,7 @@ namespace Playnite
             }
         }
 
-        private ScriptLanguage actionsScriptLanguage = ScriptLanguage.Batch;
+        private ScriptLanguage actionsScriptLanguage = ScriptLanguage.PowerShell;
         public ScriptLanguage ActionsScriptLanguage
         {
             get => actionsScriptLanguage;
@@ -1387,6 +1352,150 @@ namespace Playnite
             }
         }
 
+        private string gameStartedScript;
+        public string GameStartedScript
+        {
+            get => gameStartedScript;
+            set
+            {
+                gameStartedScript = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private bool downloadBackgroundsImmediately = true;
+        public bool DownloadBackgroundsImmediately
+        {
+            get => downloadBackgroundsImmediately;
+            set
+            {
+                downloadBackgroundsImmediately = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private bool showImagePerformanceWarning = true;
+        public bool ShowImagePerformanceWarning
+        {
+            get => showImagePerformanceWarning;
+            set
+            {
+                showImagePerformanceWarning = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private bool backgroundImageAnimation = true;
+        public bool BackgroundImageAnimation
+        {
+            get => backgroundImageAnimation;
+            set
+            {
+                backgroundImageAnimation = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private AutoClientShutdownSettings clientAutoShutdown = new AutoClientShutdownSettings();
+        public AutoClientShutdownSettings ClientAutoShutdown
+        {
+            get => clientAutoShutdown;
+            set
+            {
+                clientAutoShutdown = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private bool darkenUninstalledGamesGrid = false;
+        public bool DarkenUninstalledGamesGrid
+        {
+            get => darkenUninstalledGamesGrid;
+            set
+            {
+                darkenUninstalledGamesGrid = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private bool usedFieldsOnlyOnFilterLists = true;
+        public bool UsedFieldsOnlyOnFilterLists
+        {
+            get => usedFieldsOnlyOnFilterLists;
+            set
+            {
+                usedFieldsOnlyOnFilterLists = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private bool discordPresenceEnabled = false;
+        public bool DiscordPresenceEnabled
+        {
+            get => discordPresenceEnabled;
+            set
+            {
+                discordPresenceEnabled = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private bool showHiddenInQuickLaunch = true;
+        public bool ShowHiddenInQuickLaunch
+        {
+            get => showHiddenInQuickLaunch;
+            set
+            {
+                showHiddenInQuickLaunch = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private int quickLaunchItems = 10;
+        public int QuickLaunchItems
+        {
+            get => quickLaunchItems;
+            set
+            {
+                quickLaunchItems = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private string directoryOpenCommand;
+        public string DirectoryOpenCommand
+        {
+            get => directoryOpenCommand;
+            set
+            {
+                directoryOpenCommand = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private ApplicationView currentApplicationView;
+        [JsonIgnore]
+        public ApplicationView CurrentApplicationView
+        {
+            get => currentApplicationView;
+            set
+            {
+                currentApplicationView = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private AgeRatingOrg ageRatingOrgPriority = AgeRatingOrg.PEGI;
+        public AgeRatingOrg AgeRatingOrgPriority
+        {
+            get => ageRatingOrgPriority;
+            set
+            {
+                ageRatingOrgPriority = value;
+                OnPropertyChanged();
+            }
+        }
+
         [JsonIgnore]
         public static bool IsPortable
         {
@@ -1408,11 +1517,24 @@ namespace Playnite
             get; private set;
         } = new FullscreenSettings();
 
+        [JsonIgnore]
+        public ImportExclusionList ImportExclusionList
+        {
+            get; set;
+        } = new ImportExclusionList();
+
         public PlayniteSettings()
         {
+            var gpus = Computer.GetGpuVendors();
+            if (gpus.Contains(HwCompany.Intel) || gpus.Contains(HwCompany.VMware))
+            {
+                BackgroundImageAnimation = false;
+            }
+
             InstallInstanceId = Guid.NewGuid().ToString();
             ItemSpacingMargin = GetItemSpacingMargin();
             FullscreenItemSpacingMargin = GetFullscreenItemSpacingMargin();
+            UpdateGridItemHeight();
         }
 
         private static T LoadSettingFile<T>(string path) where T : class
@@ -1434,7 +1556,7 @@ namespace Playnite
 
         private static void SaveSettingFile(object settings, string path)
         {
-            File.WriteAllText(path, JsonConvert.SerializeObject(settings, Formatting.Indented));
+            FileSystem.WriteStringToFile(path, JsonConvert.SerializeObject(settings, Formatting.Indented));
         }
 
         public static PlayniteSettings LoadSettings()
@@ -1442,36 +1564,40 @@ namespace Playnite
             var settings = LoadSettingFile<PlayniteSettings>(PlaynitePaths.ConfigFilePath);
             if (settings == null)
             {
-                logger.Info("No existing settings found, creating default ones.");
-                settings = new PlayniteSettings();
-            }
-            else
-            {
-                if (settings.Version == 1)
+                logger.Warn("No existing settings found.");
+                settings = LoadSettingFile<PlayniteSettings>(PlaynitePaths.BackupConfigFilePath);
+                if (settings == null)
                 {
-                    settings.BackgroundImageBlurAmount = 17;
-                    settings.Version = 2;
-                }
-
-                if (settings.Version == 2)
-                {
-                    settings.BackgroundImageBlurAmount = 60;
-                    settings.Version = 3;
+                    logger.Warn("No settings backup found, creating default ones.");
+                    settings = new PlayniteSettings();
                 }
             }
 
-            settings.WindowPositions = LoadSettingFile<WindowPositions>(PlaynitePaths.WindowPositionsPath);
-            if (settings.WindowPositions == null)
+            if (settings.ViewSettings.ListViewColumsOrder == null)
             {
-                logger.Info("No existing WindowPositions settings found, creating default ones.");
-                settings.WindowPositions = new WindowPositions();
+                settings.ViewSettings.ListViewColumsOrder = new List<GameField>
+                {
+                    GameField.Icon,
+                    GameField.Name,
+                    GameField.ReleaseDate,
+                    GameField.Genres,
+                    GameField.LastActivity,
+                    GameField.Playtime,
+                    GameField.PluginId
+                };
             }
 
-            settings.Fullscreen = LoadSettingFile<FullscreenSettings>(PlaynitePaths.FullscreenConfigFilePath);
-            if (settings.Fullscreen == null)
+            if (settings.ViewSettings.ListViewColumns == null)
             {
-                logger.Info("No existing fullscreen settings found, creating default ones.");
-                settings.Fullscreen = new FullscreenSettings();
+                var columns = new ListViewColumnsProperties();
+                columns.Icon.Visible = true;
+                columns.Name.Visible = true;
+                columns.ReleaseDate.Visible = true;
+                columns.Genres.Visible = true;
+                columns.LastActivity.Visible = true;
+                columns.Playtime.Visible = true;
+                columns.PluginId.Visible = true;
+                settings.ViewSettings.ListViewColumns = columns;
             }
 
             if (settings.MetadataSettings == null)
@@ -1479,15 +1605,108 @@ namespace Playnite
                 settings.MetadataSettings = MetadataDownloaderSettings.GetDefaultSettings();
             }
 
+            if (settings.Version == 1)
+            {
+                settings.BackgroundImageBlurAmount = 17;
+                settings.Version = 2;
+            }
+
+            if (settings.Version == 2)
+            {
+                settings.BackgroundImageBlurAmount = 60;
+                settings.Version = 3;
+            }
+
+            if (settings.Version == 3)
+            {
+                settings.MetadataSettings.Feature = new MetadataFieldSettings(
+                    true, new List<Guid> { Guid.Empty, BuiltinExtensions.GetIdFromExtension(BuiltinExtension.IgdbMetadata) });
+                settings.Version = 4;
+            }
+
+            if (settings.Version == 4)
+            {
+                settings.MetadataSettings.AgeRating = new MetadataFieldSettings(
+                    true, new List<Guid> { Guid.Empty, BuiltinExtensions.GetIdFromExtension(BuiltinExtension.IgdbMetadata) });
+                settings.MetadataSettings.Series = new MetadataFieldSettings(
+                    true, new List<Guid> { Guid.Empty, BuiltinExtensions.GetIdFromExtension(BuiltinExtension.IgdbMetadata) });
+                settings.MetadataSettings.Platform = new MetadataFieldSettings(
+                    true, new List<Guid> { Guid.Empty });
+                settings.MetadataSettings.Region = new MetadataFieldSettings(
+                    true, new List<Guid> { Guid.Empty });
+                settings.Version = 5;
+            }
+
+            settings.WindowPositions = LoadSettingFile<WindowPositions>(PlaynitePaths.WindowPositionsPath);
+            if (settings.WindowPositions == null)
+            {
+                logger.Warn("No existing WindowPositions settings found.");
+                settings.WindowPositions = LoadSettingFile<WindowPositions>(PlaynitePaths.BackupWindowPositionsPath);
+                if (settings.WindowPositions == null)
+                {
+                    logger.Warn("No WindowPositions settings backup found, creating default ones.");
+                    settings.WindowPositions = new WindowPositions();
+                }
+            }
+
+            settings.Fullscreen = LoadSettingFile<FullscreenSettings>(PlaynitePaths.FullscreenConfigFilePath);
+            if (settings.Fullscreen == null)
+            {
+                logger.Warn("No existing fullscreen settings found.");
+                settings.Fullscreen = LoadSettingFile<FullscreenSettings>(PlaynitePaths.BackupFullscreenConfigFilePath);
+                if (settings.Fullscreen == null)
+                {
+                    logger.Warn("No fullscreen settings backup found, creating default ones.");
+                    settings.Fullscreen = new FullscreenSettings();
+                }
+            }
+
+            settings.ImportExclusionList = LoadSettingFile<ImportExclusionList>(PlaynitePaths.ExclusionListConfigFilePath);
+            if (settings.ImportExclusionList == null)
+            {
+                logger.Warn("No existing ImportExclusionList settings found.");
+                settings.ImportExclusionList = LoadSettingFile<ImportExclusionList>(PlaynitePaths.BackupExclusionListConfigFilePath);
+                if (settings.ImportExclusionList == null)
+                {
+                    logger.Warn("No ImportExclusionList settings backup found, creating default ones.");
+                    settings.ImportExclusionList = new ImportExclusionList();
+                }
+            }
+
+            settings.BackupSettings();
             return settings;
         }
 
         public void SaveSettings()
         {
-            FileSystem.CreateDirectory(PlaynitePaths.ConfigRootPath);
-            SaveSettingFile(this, PlaynitePaths.ConfigFilePath);
-            SaveSettingFile(WindowPositions, PlaynitePaths.WindowPositionsPath);
-            SaveSettingFile(Fullscreen, PlaynitePaths.FullscreenConfigFilePath);
+            try
+            {
+                FileSystem.CreateDirectory(PlaynitePaths.ConfigRootPath);
+                SaveSettingFile(this, PlaynitePaths.ConfigFilePath);
+                SaveSettingFile(WindowPositions, PlaynitePaths.WindowPositionsPath);
+                SaveSettingFile(Fullscreen, PlaynitePaths.FullscreenConfigFilePath);
+                SaveSettingFile(ImportExclusionList, PlaynitePaths.ExclusionListConfigFilePath);
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(e, "Failed to save application settings.");
+            }
+        }
+
+        public void BackupSettings()
+        {
+            try
+            {
+                FileSystem.CreateDirectory(PlaynitePaths.ConfigRootPath);
+                SaveSettingFile(this, PlaynitePaths.BackupConfigFilePath);
+                SaveSettingFile(WindowPositions, PlaynitePaths.BackupWindowPositionsPath);
+                SaveSettingFile(Fullscreen, PlaynitePaths.BackupFullscreenConfigFilePath);
+                SaveSettingFile(ImportExclusionList, PlaynitePaths.BackupExclusionListConfigFilePath);
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(e, "Failed to backup application settings.");
+            }
         }
 
         [OnError]
@@ -1503,7 +1722,7 @@ namespace Playnite
 #if DEBUG
             var consoleTarget = new ColoredConsoleTarget()
             {
-                Layout = @"${level:uppercase=true}|${logger}:${message}${exception}"
+                Layout = @"${level:uppercase=true}|${logger}:${message}${onexception:${newline}${exception}}"
             };
 
             config.AddTarget("console", consoleTarget);
@@ -1514,12 +1733,13 @@ namespace Playnite
             var fileTarget = new FileTarget()
             {
                 FileName = Path.Combine(PlaynitePaths.ConfigRootPath, "playnite.log"),
-                Layout = "${longdate}|${level:uppercase=true}:${message}${exception:format=toString}",
+                Layout = "${date:format=dd-MM HH\\:mm\\:ss.fff}|${level:uppercase=true}|${logger}:${message}${onexception:${newline}${exception:format=toString}}",
                 KeepFileOpen = false,
                 ArchiveFileName = Path.Combine(PlaynitePaths.ConfigRootPath, "playnite.{#####}.log"),
                 ArchiveAboveSize = 4096000,
                 ArchiveNumbering = ArchiveNumberingMode.Sequence,
-                MaxArchiveFiles = 2
+                MaxArchiveFiles = 2,
+                Encoding = Encoding.UTF8
             };
 
             config.AddTarget("file", fileTarget);
@@ -1553,36 +1773,6 @@ namespace Playnite
         {
         }
 
-        public static void SetBootupStateRegistration(bool runOnBootup)
-        {
-            var startupPath = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            var shortcutPath = Path.Combine(startupPath, "Playnite.lnk");
-            if (runOnBootup)
-            {
-                var args = new CmdLineOptions()
-                {
-                    HideSplashScreen = true
-                }.ToString();
-                                
-                if (File.Exists(shortcutPath))
-                {
-                    var existLnk = Programs.GetLnkShortcutData(shortcutPath);
-                    if (existLnk.Path == PlaynitePaths.DesktopExecutablePath &&
-                        existLnk.Arguments == args)
-                    {
-                        return;
-                    }
-                }
-
-                FileSystem.DeleteFile(shortcutPath);
-                Programs.CreateShortcut(PlaynitePaths.DesktopExecutablePath, args, "", shortcutPath);
-            }
-            else
-            {
-                FileSystem.DeleteFile(shortcutPath);
-            }
-        }
-
         private Thickness GetItemSpacingMargin()
         {
             return new Thickness(GridItemSpacing / 2, GridItemSpacing / 2, GridItemSpacing / 2, GridItemSpacing / 2);;
@@ -1595,12 +1785,26 @@ namespace Playnite
             return new Thickness(marginY, marginX, 0, 0);
         }
 
+        private void UpdateGridItemHeight()
+        {
+            if (GridItemWidth != 0)
+            {
+                GridItemHeight = Math.Round(GridItemWidth * ((double)gridItemHeightRatio / GridItemWidthRatio));
+            }
+            else
+            {
+                GridItemHeight = 0;
+            }
+
+            OnPropertyChanged(nameof(GridItemHeight));
+        }
+
         #region Serialization Conditions
 
         public bool ShouldSerializeDisabledPlugins()
         {
             return DisabledPlugins.HasItems();
-        }       
+        }
 
         #endregion Serialization Conditions
     }

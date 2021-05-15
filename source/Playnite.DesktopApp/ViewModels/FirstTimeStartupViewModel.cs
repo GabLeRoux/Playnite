@@ -18,7 +18,7 @@ using Playnite.Windows;
 using Playnite.DesktopApp.Windows;
 
 namespace Playnite.DesktopApp.ViewModels
-{    
+{
     public class FirstTimeStartupViewModel : ObservableObject
     {
         public class Pages
@@ -43,7 +43,7 @@ namespace Playnite.DesktopApp.ViewModels
         {
             get => SelectedIndex == Pages.Finish;
         }
-        
+
         private PlayniteSettings settings = new PlayniteSettings();
         public PlayniteSettings Settings
         {
@@ -174,12 +174,18 @@ namespace Playnite.DesktopApp.ViewModels
             this.extensions = extensions;
             this.playniteApi = playniteApi;
 
-            var plugins = extensions.GetExtensionDescriptors().Where(a => a.Type == ExtensionType.GameLibrary);
+            var plugins = ExtensionFactory.GetExtensionDescriptors().Where(a => a.Type == ExtensionType.GameLibrary);
             foreach (var description in plugins)
             {
                 foreach (LibraryPlugin provider in extensions.LoadPlugins(description, playniteApi).Where(a => a is LibraryPlugin))
                 {
-                    LibraryPlugins.Add(new SelectablePlugin(provider?.Client.IsInstalled == true, provider, description));
+                    var selected = true;
+                    if (provider.Client != null)
+                    {
+                        selected = provider.Client.IsInstalled;
+                    }
+
+                    LibraryPlugins.Add(new SelectablePlugin(selected, provider, description, false));
                 }
             }
         }
@@ -191,7 +197,7 @@ namespace Playnite.DesktopApp.ViewModels
 
         public void CloseView(bool? result)
         {
-            Settings.DisabledPlugins = LibraryPlugins.Where(a => !a.Selected)?.Select(a => a.Description.FolderName).ToList();
+            Settings.DisabledPlugins = LibraryPlugins.Where(a => !a.Selected)?.Select(a => a.Description.DirectoryName).ToList();
             foreach (var plugin in LibraryPlugins)
             {
                 plugin.Plugin.Dispose();
@@ -228,7 +234,7 @@ namespace Playnite.DesktopApp.ViewModels
 
                 if (selectedPlugins?.Any() == true)
                 {
-                    SetPluginConfiguration(selectedPlugins[0]);        
+                    SetPluginConfiguration(selectedPlugins[0]);
                 }
                 else
                 {
@@ -238,7 +244,7 @@ namespace Playnite.DesktopApp.ViewModels
                 }
             }
 
-            if (SelectedIndex == Pages.ProviderConfig)
+            if (SelectedIndex == Pages.ProviderConfig && SelectedLibraryPlugin != null)
             {
                 if (SelectedLibraryPlugin.Settings.VerifySettings(out var errors))
                 {
@@ -263,7 +269,14 @@ namespace Playnite.DesktopApp.ViewModels
 
         public void NavigateBack()
         {
-            SelectedIndex--;
+            if (SelectedIndex == Pages.Finish)
+            {
+                SelectedIndex = Pages.ProviderSelect;
+            }
+            else
+            {
+                SelectedIndex--;
+            }
         }
     }
 }

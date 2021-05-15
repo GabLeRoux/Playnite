@@ -19,31 +19,15 @@ namespace SteamLibrary.Services
         {
         }
 
-        public void PostSteamAppInfoData(uint appId, string data)
+        public List<GetOwnedGamesResult.Game> GetSteamLibrary(ulong userName, bool freeSub = false)
         {
-            var content = new StringContent(data, Encoding.UTF8, "text/plain");
-            HttpClient.PostAsync(Endpoint + $"/steam/appinfo/{appId}", content).Wait();
-        }
+            var url = "/steam/library/" + userName;
+            if (freeSub)
+            {
+                url += "?freeSub=true";
+            }
 
-        public string GetSteamAppInfoData(uint appId)
-        {
-            return ExecuteGetRequest<string>($"/steam/appinfo/{appId}");
-        }
-
-        public void PostSteamStoreData(uint appId, string data)
-        {
-            var content = new StringContent(data, Encoding.UTF8, "text/plain");
-            HttpClient.PostAsync(Endpoint + $"/steam/store/{appId}", content).Wait();
-        }
-
-        public string GetSteamStoreData(uint appId)
-        {
-            return ExecuteGetRequest<string>($"/steam/store/{appId}");
-        }
-
-        public List<GetOwnedGamesResult.Game> GetSteamLibrary(string userName)
-        {
-            return ExecuteGetRequest<List<GetOwnedGamesResult.Game>>("/steam/library/" + userName);
+            return ExecuteGetRequest<List<GetOwnedGamesResult.Game>>(url);
         }
     }
 }

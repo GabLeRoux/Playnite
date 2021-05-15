@@ -1,12 +1,11 @@
 ﻿using EpicLibrary.Services;
-using Newtonsoft.Json.Linq;
+using Playnite.Common.Media.Icons;
 using Playnite.SDK;
+using Playnite.SDK.Data;
 using Playnite.SDK.Metadata;
 using Playnite.SDK.Models;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -30,7 +29,7 @@ namespace EpicLibrary
             var gameInfo = new GameInfo() { Links = new List<Link>() };
             var metadata = new GameMetadata()
             {
-                GameInfo = gameInfo                
+                GameInfo = gameInfo
             };
 
             using (var client = new WebStoreClient())
@@ -41,10 +40,19 @@ namespace EpicLibrary
                     var product = client.GetProductInfo(catalogs[0].productSlug).GetAwaiter().GetResult();
                     if (product.pages.HasItems())
                     {
-                        var page = product.pages[0];
-                        gameInfo.Description = page.data.about.description;
-                        gameInfo.Developers = new List<string>() { page.data.about.developerAttribution };
-                        metadata.BackgroundImage = new MetadataFile(page.data.hero.backgroundImageUrl);             
+                        var page = product.pages.FirstOrDefault(a => a.type is string type && type == "productHome");
+                        if (page == null)
+                        {
+                            page = product.pages[0];
+                        }
+
+                        gameInfo.Developers = page.data.about.developerAttribution?.
+                            Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries).
+                            Select(a => a.Trim()).ToList();
+                        gameInfo.Publishers = page.data.about.publisherAttribution?.
+                            Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries).
+                            Select(a => a.Trim()).ToList();
+                        metadata.BackgroundImage = new MetadataFile(page.data.hero.backgroundImageUrl);
                         gameInfo.Links.Add(new Link(
                             library.PlayniteApi.Resources.GetString("LOCCommonLinksStorePage"),
                             "https://www.epicgames.com/store/en-US/product/" + catalogs[0].productSlug));
@@ -60,9 +68,9 @@ namespace EpicLibrary
                             }
                         }
 
-                        if (!gameInfo.Description.IsNullOrEmpty())
+                        if (!page.data.about.description.IsNullOrEmpty())
                         {
-                            gameInfo.Description = gameInfo.Description.Replace("\n", "\n<br>");
+                            gameInfo.Description = Markup.MarkdownToHtml(page.data.about.description);
                         }
                     }
                 }
@@ -73,22 +81,21 @@ namespace EpicLibrary
             // There's not icon available on Epic servers so we will load one from EXE
             if (game.IsInstalled && string.IsNullOrEmpty(game.Icon))
             {
-                var playAction = api.ExpandGameVariables(game, game.PlayAction);
-                var executable = string.Empty;
-                if (File.Exists(playAction.Path))
+                var manifest = EpicLauncher.GetInstalledManifests().FirstOrDefault(a => a.AppName == game.GameId);
+                if (manifest != null)
                 {
-                    executable = playAction.Path;
-                }
-                else if (!string.IsNullOrEmpty(playAction.WorkingDir))
-                {
-                    executable = Path.Combine(playAction.WorkingDir, playAction.Path);
-                }
-
-                var exeIcon = IconExtension.ExtractIconFromExe(executable, true);
-                if (exeIcon != null)
-                {
-                    var iconName = Guid.NewGuid() + ".png";
-                    metadata.Icon = new MetadataFile(iconName, exeIcon.ToByteArray(System.Drawing.Imaging.ImageFormat.Png));
+                    var exePath = Path.Combine(manifest.InstallLocation, manifest.LaunchExecutable);
+                    if (File.Exists(exePath))
+                    {
+                        using (var ms = new MemoryStream())
+                        {
+                            if (IconExtractor.ExtractMainIconFromFile(exePath, ms))
+                            {
+                                var iconName = Guid.NewGuid() + ".ico";
+                                metadata.Icon = new MetadataFile(iconName, ms.ToArray());
+                            }
+                        }
+                    }
                 }
             }
 

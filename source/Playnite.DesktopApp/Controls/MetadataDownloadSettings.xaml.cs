@@ -195,6 +195,17 @@ namespace Playnite.DesktopApp.Controls
             }
         }
 
+        private FieldsSelectionSettings featuresSettings;
+        public FieldsSelectionSettings FeaturesSettings
+        {
+            get => featuresSettings;
+            set
+            {
+                featuresSettings = value;
+                OnPropertyChanged();
+            }
+        }
+
         private FieldsSelectionSettings descriptionSettings;
         public FieldsSelectionSettings DescriptionSettings
         {
@@ -261,13 +272,57 @@ namespace Playnite.DesktopApp.Controls
             }
         }
 
-        private FieldsSelectionSettings backgroundImageSettingsb;
+        private FieldsSelectionSettings backgroundImageSettings;
         public FieldsSelectionSettings BackgroundImageSettings
         {
-            get => backgroundImageSettingsb;
+            get => backgroundImageSettings;
             set
             {
-                backgroundImageSettingsb = value;
+                backgroundImageSettings = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private FieldsSelectionSettings ageRatingSettings;
+        public FieldsSelectionSettings AgeRatingSettings
+        {
+            get => ageRatingSettings;
+            set
+            {
+                ageRatingSettings = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private FieldsSelectionSettings seriesSettings;
+        public FieldsSelectionSettings SeriesSettings
+        {
+            get => seriesSettings;
+            set
+            {
+                seriesSettings = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private FieldsSelectionSettings regionSettings;
+        public FieldsSelectionSettings RegionSettings
+        {
+            get => regionSettings;
+            set
+            {
+                regionSettings = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private FieldsSelectionSettings platformSettings;
+        public FieldsSelectionSettings PlatformSettings
+        {
+            get => platformSettings;
+            set
+            {
+                platformSettings = value;
                 OnPropertyChanged();
             }
         }
@@ -342,6 +397,12 @@ namespace Playnite.DesktopApp.Controls
                 control.Settings.Tag.Sources = control.TagsSettings.Sources.Where(a => a.Enabled).Select(a => a.Id).ToList();
             };
 
+            control.FeaturesSettings = control.SetupField(settings.Feature, MetadataField.Features, plugins);
+            control.FeaturesSettings.SettingsChanged += (_, __) =>
+            {
+                control.Settings.Feature.Sources = control.FeaturesSettings.Sources.Where(a => a.Enabled).Select(a => a.Id).ToList();
+            };
+
             control.DescriptionSettings = control.SetupField(settings.Description, MetadataField.Description, plugins);
             control.DescriptionSettings.SettingsChanged += (_, __) =>
             {
@@ -382,6 +443,30 @@ namespace Playnite.DesktopApp.Controls
             control.BackgroundImageSettings.SettingsChanged += (_, __) =>
             {
                 control.Settings.BackgroundImage.Sources = control.BackgroundImageSettings.Sources.Where(a => a.Enabled).Select(a => a.Id).ToList();
+            };
+
+            control.AgeRatingSettings = control.SetupField(settings.AgeRating, MetadataField.AgeRating, plugins);
+            control.AgeRatingSettings.SettingsChanged += (_, __) =>
+            {
+                control.Settings.AgeRating.Sources = control.AgeRatingSettings.Sources.Where(a => a.Enabled).Select(a => a.Id).ToList();
+            };
+
+            control.RegionSettings = control.SetupField(settings.Region, MetadataField.Region, plugins);
+            control.RegionSettings.SettingsChanged += (_, __) =>
+            {
+                control.Settings.Region.Sources = control.RegionSettings.Sources.Where(a => a.Enabled).Select(a => a.Id).ToList();
+            };
+
+            control.SeriesSettings = control.SetupField(settings.Series, MetadataField.Series, plugins);
+            control.SeriesSettings.SettingsChanged += (_, __) =>
+            {
+                control.Settings.Series.Sources = control.SeriesSettings.Sources.Where(a => a.Enabled).Select(a => a.Id).ToList();
+            };
+
+            control.PlatformSettings = control.SetupField(settings.Platform, MetadataField.Platform, plugins);
+            control.PlatformSettings.SettingsChanged += (_, __) =>
+            {
+                control.Settings.Platform.Sources = control.PlatformSettings.Sources.Where(a => a.Enabled).Select(a => a.Id).ToList();
             };
         }
 

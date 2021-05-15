@@ -79,7 +79,7 @@ function global:Get-MsBuildPath()
         $VSWHERE_CMD = "..\source\packages\vswhere.2.6.7\tools\vswhere.exe"
         if (-not (Get-Command -Name $VSWHERE_CMD -Type Application -ErrorAction Ignore))
         {
-            Invoke-Nuget "install vswhere -Version 2.6.7 -SolutionDirectory `"$solutionDir`""
+            Invoke-Nuget "install vswhere -Version 2.6.7 -SolutionDirectory `"$solutionDir`"" | Out-Null
         }
     }
 
@@ -118,7 +118,7 @@ function global:SignFile()
     {
         Write-Host "Signing file `"$Path`"" -ForegroundColor Green
         $signToolPath = (Resolve-Path "c:\Program Files*\Windows Kits\*\bin\*\x86\signtool.exe").Path
-        $res = StartAndWait $signToolPath ('sign /n "Open Source Developer, Josef Němec" /t http://time.certum.pl /v /sha1 FE916C2B41F1DB83F0C972274CB8CD03BF79B0DA ' + "`"$Path`"")
+        $res = StartAndWait $signToolPath ('sign /n "Open Source Developer, Josef Němec" /t http://time.certum.pl /v ' + "`"$Path`"")
         if ($res -ne 0)
         {        
             throw "Failed to sign file."

@@ -9,7 +9,9 @@ using Playnite.SDK.Plugins;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -39,9 +41,11 @@ namespace IGDBMetadata
             MetadataField.Publishers,
             MetadataField.Genres,
             MetadataField.Links,
-            MetadataField.Tags,
+            MetadataField.Features,
             MetadataField.CriticScore,
-            MetadataField.CommunityScore
+            MetadataField.CommunityScore,
+            MetadataField.Series,
+            MetadataField.AgeRating
         };
 
         public IgdbMetadataPlugin(IPlayniteAPI playniteAPI) : base(playniteAPI)
@@ -95,12 +99,6 @@ namespace IGDBMetadata
             }
 
             return results;
-        }
-
-        public string GetIgdbSearchString(string gameName)
-        {
-            var temp = gameName.Replace(":", " ").Replace("-", " ");
-            return Regex.Replace(temp, @"\s+", " ");
         }
 
         internal static string GetGameInfoFromUrl(string url)

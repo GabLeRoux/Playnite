@@ -9,6 +9,7 @@ using System.Collections.ObjectModel;
 using Playnite.API;
 using Microsoft.Win32;
 using System.IO;
+using Playnite.SDK.Exceptions;
 
 namespace Playnite.Scripting.PowerShell
 {
@@ -16,7 +17,7 @@ namespace Playnite.Scripting.PowerShell
     {
         private static NLog.Logger logger = NLog.LogManager.GetLogger("PowerShell");
         private Runspace runspace;
-        
+
         public static bool IsInstalled
         {
             get
@@ -25,9 +26,10 @@ namespace Playnite.Scripting.PowerShell
             }
         }
 
-        public PowerShellRuntime()
+        public PowerShellRuntime(string runspaceName = "PowerShell")
         {
             runspace = RunspaceFactory.CreateRunspace();
+            runspace.Name = runspaceName;
             runspace.ApartmentState = System.Threading.ApartmentState.MTA;
             runspace.ThreadOptions = PSThreadOptions.UseCurrentThread;
             runspace.Open();
@@ -39,17 +41,13 @@ namespace Playnite.Scripting.PowerShell
                 pipe.Invoke();
             }
 
-            SetVariable("__logger", new Logger("PowerShell"));
+            SetVariable("__logger", new Logger(runspaceName));
         }
 
         public void Dispose()
         {
             runspace.Close();
-        }
-
-        public static PowerShellRuntime CreateRuntime()
-        {
-            return new PowerShellRuntime();
+            runspace.Dispose();
         }
 
         public object Execute(string script, string workDir = null)
@@ -62,7 +60,7 @@ namespace Playnite.Scripting.PowerShell
             if (!workDir.IsNullOrEmpty())
             {
                 runspace.SessionStateProxy.Path.PushCurrentLocation("main");
-                runspace.SessionStateProxy.Path.SetLocation(workDir);
+                runspace.SessionStateProxy.Path.SetLocation(WildcardPattern.Escape(workDir));
             }
 
             try
@@ -77,17 +75,33 @@ namespace Playnite.Scripting.PowerShell
                         }
                     }
 
-                    var result = pipe.Invoke();
-                    if (result.Count == 1)
+                    Collection<PSObject> result = null;
+
+                    try
                     {
-                        return result[0].BaseObject;
+                        result = pipe.Invoke();
+                    }
+                    catch (RuntimeException e)
+                    {
+                        throw new ScriptRuntimeException(e.Message, e.ErrorRecord.ScriptStackTrace);
+                    }
+
+                    if (result == null)
+                    {
+                        return null;
                     }
                     else
                     {
-                        return result.Select(a => a?.BaseObject).ToList();
+                        if (result.Count == 1)
+                        {
+                            return result[0].BaseObject;
+                        }
+                        else
+                        {
+                            return result.Select(a => a?.BaseObject).ToList();
+                        }
                     }
                 }
-
             }
             finally
             {

@@ -12,7 +12,7 @@ namespace Playnite.Database
     {
         private readonly GameDatabase db;
 
-        public EmulatorsCollection(GameDatabase database) : base()
+        public EmulatorsCollection(GameDatabase database) : base(type: GameDatabaseCollection.Emulators)
         {
             db = database;
         }
@@ -59,7 +59,17 @@ namespace Playnite.Database
             throw new NotSupportedException();
         }
 
+        public override Emulator Add(string itemName, Func<Emulator, string, bool> existingComparer)
+        {
+            throw new NotSupportedException();
+        }
+
         public override IEnumerable<Emulator> Add(List<string> items)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override IEnumerable<Emulator> Add(List<string> itemsToAdd, Func<Emulator, string, bool> existingComparer)
         {
             throw new NotSupportedException();
         }

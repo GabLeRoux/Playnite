@@ -156,6 +156,17 @@ namespace Playnite.Metadata
             }
         }
 
+        private MetadataFieldSettings feature = new MetadataFieldSettings();
+        public MetadataFieldSettings Feature
+        {
+            get => feature;
+            set
+            {
+                feature = value;
+                OnPropertyChanged();
+            }
+        }
+
         private MetadataFieldSettings description = new MetadataFieldSettings();
         public MetadataFieldSettings Description
         {
@@ -233,6 +244,50 @@ namespace Playnite.Metadata
             }
         }
 
+        private MetadataFieldSettings ageRating = new MetadataFieldSettings();
+        public MetadataFieldSettings AgeRating
+        {
+            get => ageRating;
+            set
+            {
+                ageRating = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private MetadataFieldSettings series = new MetadataFieldSettings();
+        public MetadataFieldSettings Series
+        {
+            get => series;
+            set
+            {
+                series = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private MetadataFieldSettings region = new MetadataFieldSettings();
+        public MetadataFieldSettings Region
+        {
+            get => region;
+            set
+            {
+                region = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private MetadataFieldSettings platform = new MetadataFieldSettings();
+        public MetadataFieldSettings Platform
+        {
+            get => platform;
+            set
+            {
+                platform = value;
+                OnPropertyChanged();
+            }
+        }
+
         public MetadataDownloaderSettings()
         {
         }
@@ -242,7 +297,7 @@ namespace Playnite.Metadata
             var igdbPluginId = BuiltinExtensions.GetIdFromExtension(BuiltinExtension.IgdbMetadata);
             var settings = new MetadataDownloaderSettings();
             settings.ConfigureFields(new List<Guid> { Guid.Empty, igdbPluginId }, true);
-            settings.CoverImage.Sources = new List<Guid> { igdbPluginId, Guid.Empty };            
+            settings.CoverImage.Sources = new List<Guid> { igdbPluginId, Guid.Empty };
             settings.Name.Import = false;
             return settings;
         }
@@ -262,6 +317,11 @@ namespace Playnite.Metadata
             ReleaseDate = new MetadataFieldSettings(import, sources);
             CommunityScore = new MetadataFieldSettings(import, sources);
             CriticScore = new MetadataFieldSettings(import, sources);
+            Feature = new MetadataFieldSettings(import, sources);
+            AgeRating = new MetadataFieldSettings(import, sources);
+            Platform = new MetadataFieldSettings(import, sources);
+            Series = new MetadataFieldSettings(import, sources);
+            Region = new MetadataFieldSettings(import, sources);
         }
     }
 }

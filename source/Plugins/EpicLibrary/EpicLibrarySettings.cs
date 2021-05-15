@@ -23,7 +23,7 @@ namespace EpicLibrary
         private EpicLibrary library;
         private IPlayniteAPI api;
 
-        #region Settings      
+        #region Settings
 
         public int Version { get; set; }
 

@@ -1,8 +1,6 @@
-Name: <name>
-Author: <author>
+Id: _name__00000000-0000-0000-0000-000000000001
+Name: IronPython Extension
+Author: John Doe
 Version: 1.0
-Module: PowerShellScript.ps1
+Module: IronPythonScript.py
 Type: Script
-Functions: 
-    - Description: <function name>
-      FunctionName: ExtensionFunction

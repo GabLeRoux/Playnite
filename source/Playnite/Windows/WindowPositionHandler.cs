@@ -14,7 +14,7 @@ namespace Playnite.Windows
 {
     public class WindowPositionHandler
     {
-        private readonly Window window;
+        private Window window;
         private readonly string windowName;
         private readonly WindowPositions configuration;
         private bool ignoreChanges = false;
@@ -28,6 +28,17 @@ namespace Playnite.Windows
             window.LocationChanged += Window_LocationChanged;
             window.StateChanged += Window_StateChanged;
             window.Loaded += Window_Loaded;
+            window.Closed += Window_Closed;
+        }
+
+        private void Window_Closed(object sender, EventArgs e)
+        {
+            window.SizeChanged -= Window_SizeChanged;
+            window.LocationChanged -= Window_LocationChanged;
+            window.StateChanged -= Window_StateChanged;
+            window.Loaded -= Window_Loaded;
+            window.Closed -= Window_Closed;
+            window = null;
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -123,10 +134,33 @@ namespace Playnite.Windows
             };
         }
 
+        private void ConstrainWindow(int x, int y)
+        {
+            var positioned = false;
+            // Make sure that position is part of at least one connected screen
+            foreach (var monitor in Computer.GetScreens())
+            {
+                if (monitor.WorkingArea.Contains(x, y))
+                {
+                    window.Left = x;
+                    window.Top = y;
+                    positioned = true;
+                    break;
+                }
+            }
+
+            if (!positioned)
+            {
+                window.Left = 0;
+                window.Top = 0;
+            }
+        }
+
         private void RestoreSizeAndLocation()
         {
             if (!configuration.Positions.ContainsKey(windowName))
             {
+                ConstrainWindow((int)window.Left, (int)window.Top);
                 return;
             }
 
@@ -137,22 +171,20 @@ namespace Playnite.Windows
                 var data = configuration.Positions[windowName];
                 if (data.Position != null)
                 {
-                    // Make sure that position is part of at least one connected screen
-                    foreach (var monitor in Computer.GetMonitors())
-                    {
-                        if (monitor.WorkingArea.Contains((int)data.Position.X, (int)data.Position.Y))
-                        {
-                            window.Left = data.Position.X;
-                            window.Top = data.Position.Y;
-                            break;
-                        }
-                    }
+                    ConstrainWindow((int)data.Position.X, (int)data.Position.Y);
                 }
 
                 if (data.Size != null)
                 {
-                    window.Width = data.Size.X;
-                    window.Height = data.Size.Y;
+                    if (data.Size.X >= window.MinWidth)
+                    {
+                        window.Width = data.Size.X;
+                    }
+
+                    if (data.Size.Y >= window.MinHeight)
+                    {
+                        window.Height = data.Size.Y;
+                    }
                 }
 
                 window.WindowState = data.State;

@@ -121,14 +121,6 @@ namespace Playnite.Tests
             Assert.IsFalse(
                 new List<int> { 1 }.IsListEqualExact(
                 new List<int> { 1, 2, 3 }));
-
-            Assert.IsTrue(
-                new List<GameAction> { new GameAction() { Name = "1" }, new GameAction() { Name = "2" }}.IsListEqualExact(
-                new List<GameAction> { new GameAction() { Name = "1" }, new GameAction() { Name = "2" } }));
-
-            Assert.IsFalse(
-                new List<GameAction> { new GameAction() { Name = "1" }, new GameAction() { Name = "2" } }.IsListEqualExact(
-                new List<GameAction> { new GameAction() { Name = "2" }, new GameAction() { Name = "1" } }));
         }
 
         [Test]
@@ -154,6 +146,18 @@ namespace Playnite.Tests
             Assert.AreEqual(3, distinct[0]);
             Assert.AreEqual(4, distinct[1]);
             Assert.AreEqual(5, distinct[2]);
+        }
+
+        [Test]
+        public void ContainsTest()
+        {
+            List<int> list1 = new List<int> { 1, 2, 3, 4, };
+            List<int> list2 = new List<int> { 1, 2 };
+            List<int> list3 = new List<int> { 1, 2, 5 };
+
+            Assert.IsTrue(list1.Contains(list2));
+            Assert.IsFalse(list2.Contains(list1));
+            Assert.IsFalse(list1.Contains(list3));
         }
     }
 }

@@ -19,7 +19,6 @@ namespace IGDBMetadata
     public class IgdbLazyMetadataProvider : OnDemandMetadataProvider
     {
         private static readonly ILogger logger = LogManager.GetLogger();
-        private readonly ulong gameId = 0;
         private readonly MetadataRequestOptions options;
         private readonly IgdbMetadataPlugin plugin;
         internal IgdbServerModels.ExpandedGame IgdbData { get; private set; }
@@ -41,12 +40,6 @@ namespace IGDBMetadata
         public IgdbLazyMetadataProvider(MetadataRequestOptions options, IgdbMetadataPlugin plugin)
         {
             this.options = options;
-            this.plugin = plugin;
-        }
-
-        public IgdbLazyMetadataProvider(ulong gameId, IgdbMetadataPlugin plugin)
-        {
-            this.gameId = gameId;
             this.plugin = plugin;
         }
 
@@ -73,11 +66,11 @@ namespace IGDBMetadata
                 List<IgdbServerModels.GameImage> possibleBackgrounds = null;
                 if (IgdbData.artworks.HasItems())
                 {
-                    possibleBackgrounds = IgdbData.artworks;
+                    possibleBackgrounds = IgdbData.artworks.Where(a => !a.url.IsNullOrEmpty()).ToList();
                 }
                 else if (plugin.Settings.UseScreenshotsIfNecessary && IgdbData.screenshots.HasItems())
                 {
-                    possibleBackgrounds = IgdbData.screenshots;
+                    possibleBackgrounds = IgdbData.screenshots.Where(a => !a.url.IsNullOrEmpty()).ToList();
                 }
 
                 if (possibleBackgrounds.HasItems())
@@ -112,7 +105,7 @@ namespace IGDBMetadata
                         }
                     }
 
-                    if (selected != null)
+                    if (selected != null && !selected.url.IsNullOrEmpty())
                     {
                         if (selected.height > 1080)
                         {
@@ -125,7 +118,7 @@ namespace IGDBMetadata
                     }
                 }
             }
-               
+
             return base.GetBackgroundImage();
         }
 
@@ -141,15 +134,15 @@ namespace IGDBMetadata
 
         public override MetadataFile GetCoverImage()
         {
-            if (AvailableFields.Contains(MetadataField.CoverImage))
+            if (AvailableFields.Contains(MetadataField.CoverImage) && !IgdbData.cover.url.IsNullOrEmpty())
             {
-                if (IgdbData.cover_v3.height > 1080)
+                if (IgdbData.cover.height > 1080)
                 {
-                    return new MetadataFile(GetImageUrl(IgdbData.cover_v3, ImageSizes.p1080));
+                    return new MetadataFile(GetImageUrl(IgdbData.cover, ImageSizes.p1080));
                 }
                 else
                 {
-                    return new MetadataFile(GetImageUrl(IgdbData.cover_v3, ImageSizes.original));
+                    return new MetadataFile(GetImageUrl(IgdbData.cover, ImageSizes.original));
                 }
             }
 
@@ -180,7 +173,7 @@ namespace IGDBMetadata
         {
             if (AvailableFields.Contains(MetadataField.Developers))
             {
-                return IgdbData.developers;
+                return IgdbData.involved_companies?.Where(a => a.developer).Select(a => a.company.name).ToList();
             }
 
             return base.GetDevelopers();
@@ -190,7 +183,7 @@ namespace IGDBMetadata
         {
             if (AvailableFields.Contains(MetadataField.Genres))
             {
-                return IgdbData.genres;
+                return IgdbData.genres?.Select(a => a.name).ToList();
             }
 
             return base.GetGenres();
@@ -210,10 +203,45 @@ namespace IGDBMetadata
         {
             if (AvailableFields.Contains(MetadataField.Publishers))
             {
-                return IgdbData.publishers;
+                return IgdbData.involved_companies?.Where(a => a.publisher).Select(a => a.company.name).ToList();
             }
 
             return base.GetPublishers();
+        }
+
+        public override string GetAgeRating()
+        {
+            if (AvailableFields.Contains(MetadataField.AgeRating))
+            {
+                var preferrence = plugin.PlayniteApi.ApplicationSettings.AgeRatingOrgPriority;
+                var esrb = IgdbData.age_ratings.FirstOrDefault(a => a.category == IgdbServerModels.AgeRatingOrganization.ESRB);
+                var pegi = IgdbData.age_ratings.FirstOrDefault(a => a.category == IgdbServerModels.AgeRatingOrganization.PEGI);
+                if (esrb != null && preferrence == AgeRatingOrg.ESRB)
+                {
+                    return esrb.category + " " + esrb.rating.GetDescription();
+                }
+                else if (pegi != null && preferrence == AgeRatingOrg.PEGI)
+                {
+                    return pegi.category + " " + pegi.rating.GetDescription();
+                }
+                else
+                {
+                    var rating = IgdbData.age_ratings[0];
+                    return rating.category + " " + rating.rating.GetDescription();
+                }
+            }
+
+            return base.GetAgeRating();
+        }
+
+        public override string GetSeries()
+        {
+            if (AvailableFields.Contains(MetadataField.Series))
+            {
+                return IgdbData.collection.name;
+            }
+
+            return base.GetSeries();
         }
 
         public override DateTime? GetReleaseDate()
@@ -226,21 +254,28 @@ namespace IGDBMetadata
             return base.GetReleaseDate();
         }
 
-        public override List<string> GetTags()
-        {            
-            if (AvailableFields.Contains(MetadataField.Tags))
+        public override List<string> GetFeatures()
+        {
+            if (AvailableFields.Contains(MetadataField.Features))
             {
                 var cultInfo = new CultureInfo("en-US", false).TextInfo;
-                return IgdbData.game_modes.Select(a => cultInfo.ToTitleCase(a)).ToList();
+                var features = IgdbData.game_modes.Select(a => cultInfo.ToTitleCase(a.name)).ToList();
+                if (IgdbData.player_perspectives.HasItems() &&
+                    IgdbData.player_perspectives.FirstOrDefault(a => a.name == "Virtual Reality") != null)
+                {
+                    features.Add("VR");
+                }
+
+                return features;
             }
-            return base.GetTags();
+            return base.GetFeatures();
         }
 
         public override List<Link> GetLinks()
         {
             if (AvailableFields.Contains(MetadataField.Links))
             {
-                return IgdbData.websites.Where(a => !a.url.IsNullOrEmpty()).Select(a => new Link(a.category.ToString(), a.url)).ToList();
+                return IgdbData.websites.Where(a => !a.url.IsNullOrEmpty()).Select(a => new Link(a.category.GetDescription(), a.url)).ToList();
             }
 
             return base.GetLinks();
@@ -265,7 +300,7 @@ namespace IGDBMetadata
                     fields.Add(MetadataField.Description);
                 }
 
-                if (IgdbData.cover_v3 != null)
+                if (IgdbData.cover != null)
                 {
                     fields.Add(MetadataField.CoverImage);
                 }
@@ -284,12 +319,12 @@ namespace IGDBMetadata
                     fields.Add(MetadataField.ReleaseDate);
                 }
 
-                if (IgdbData.developers.HasItems())
+                if (IgdbData.involved_companies.HasItems(a => a.developer))
                 {
                     fields.Add(MetadataField.Developers);
                 }
 
-                if (IgdbData.publishers.HasItems())
+                if (IgdbData.involved_companies.HasItems(a => a.publisher))
                 {
                     fields.Add(MetadataField.Publishers);
                 }
@@ -306,7 +341,7 @@ namespace IGDBMetadata
 
                 if (IgdbData.game_modes.HasItems())
                 {
-                    fields.Add(MetadataField.Tags);
+                    fields.Add(MetadataField.Features);
                 }
 
                 if (IgdbData.aggregated_rating != 0)
@@ -317,6 +352,16 @@ namespace IGDBMetadata
                 if (IgdbData.rating != 0)
                 {
                     fields.Add(MetadataField.CommunityScore);
+                }
+
+                if (IgdbData.age_ratings.HasItems())
+                {
+                    fields.Add(MetadataField.AgeRating);
+                }
+
+                if (IgdbData.collection != null)
+                {
+                    fields.Add(MetadataField.Series);
                 }
 
                 return fields;
@@ -330,12 +375,6 @@ namespace IGDBMetadata
                 return;
             }
 
-            if (gameId != 0)
-            {
-                IgdbData = plugin.Client.GetIGDBGameParsed(gameId);
-                return;
-            }
-
             if (!options.IsBackgroundDownload)
             {
                 var item = plugin.PlayniteApi.Dialogs.ChooseItemWithSearch(null, (a) =>
@@ -345,7 +384,7 @@ namespace IGDBMetadata
                         try
                         {
                             var gameId = GetGameInfoFromUrl(a);
-                            var data = plugin.Client.GetIGDBGameParsed(ulong.Parse(gameId));
+                            var data = plugin.Client.GetIGDBGameExpanded(ulong.Parse(gameId));
                             return new List<GenericItemOption> { new SearchResult(gameId, data.name) };
                         }
                         catch (Exception e)
@@ -364,7 +403,7 @@ namespace IGDBMetadata
                 if (item != null)
                 {
                     var searchItem = item as SearchResult;
-                    IgdbData = plugin.Client.GetIGDBGameParsed(ulong.Parse(searchItem.Id));
+                    IgdbData = plugin.Client.GetIGDBGameExpanded(ulong.Parse(searchItem.Id));
                 }
                 else
                 {
@@ -373,155 +412,24 @@ namespace IGDBMetadata
             }
             else
             {
-                var game = options.GameData;
-                if (BuiltinExtensions.GetExtensionFromId(game.PluginId) == BuiltinExtension.SteamLibrary)
+                try
                 {
-                    var igdbId = plugin.Client.GetIGDBGameBySteamId(game.GameId);
-                    if (igdbId != 0)
+                    var metadata = plugin.Client.GetMetadata(options.GameData);
+                    if (metadata.id > 0)
                     {
-                        IgdbData = plugin.Client.GetIGDBGameParsed(igdbId);
-                        return;
-                    }
-                }
-
-                if (game.Name.IsNullOrEmpty())
-                {
-                    IgdbData = new IgdbServerModels.ExpandedGame() { id = 0 };
-                    return;
-                }
-
-                var copyGame = game.GetClone();
-                copyGame.Name = StringExtensions.NormalizeGameName(game.Name);
-                var name = copyGame.Name
-                    .Replace(" RHCP", "", StringComparison.OrdinalIgnoreCase)
-                    .Replace(" RU", "", StringComparison.OrdinalIgnoreCase);
-                var results = plugin.GetSearchResults(plugin.GetIgdbSearchString(name)).ToList();
-                results.ForEach(a => a.Name = StringExtensions.NormalizeGameName(a.Name));
-                string testName = string.Empty;
-
-                // Direct comparison
-                IgdbData = matchFun(game, name, results);
-                if (IgdbData != null)
-                {
-                    return;
-                }
-
-                // Try replacing roman numerals: 3 => III
-                testName = Regex.Replace(name, @"\d+", ReplaceNumsForRomans);
-                IgdbData = matchFun(game, testName, results);
-                if (IgdbData != null)
-                {
-                    return;
-                }
-
-                // Try adding The
-                testName = "The " + name;
-                IgdbData = matchFun(game, testName, results);
-                if (IgdbData != null)
-                {
-                    return;
-                }
-
-                // Try chaning & / and
-                testName = Regex.Replace(name, @"\s+and\s+", " & ", RegexOptions.IgnoreCase);
-                IgdbData = matchFun(game, testName, results);
-                if (IgdbData != null)
-                {
-                    return;
-                }
-
-                // Try removing apostrophes
-                var resCopy = results.GetClone();
-                resCopy.ForEach(a => a.Name = a.Name.Replace("'", ""));
-                IgdbData = matchFun(game, name, resCopy);
-                if (IgdbData != null)
-                {
-                    return;
-                }
-
-                // Try removing all ":" and "-"
-                testName = Regex.Replace(name, @"\s*(:|-)\s*", " ");
-                resCopy = results.GetClone();
-                resCopy.ForEach(a => a.Name = Regex.Replace(a.Name, @"\s*(:|-)\s*", " "));
-                IgdbData = matchFun(game, testName, resCopy);
-                if (IgdbData != null)
-                {
-                    return;
-                }
-
-                // Try without subtitle
-                var testResult = results.OrderBy(a => a.ReleaseDate).FirstOrDefault(a =>
-                {
-                    if (a.ReleaseDate == null)
-                    {
-                        return false;
-                    }
-
-                    if (!string.IsNullOrEmpty(a.Name) && a.Name.Contains(":"))
-                    {
-                        return string.Equals(name, a.Name.Split(':')[0], StringComparison.InvariantCultureIgnoreCase);
-                    }
-
-                    return false;
-                });
-
-                if (testResult != null)
-                {
-                    IgdbData = plugin.Client.GetIGDBGameParsed(ulong.Parse(testResult.Id));
-                    return;
-                }
-
-                // No match found
-                IgdbData = new IgdbServerModels.ExpandedGame() { id = 0 };
-            }
-        }
-
-        private IgdbServerModels.ExpandedGame matchFun(Game game, string matchName, IEnumerable<SearchResult> list)
-        {
-            var res = list.Where(a => string.Equals(matchName, a.Name, StringComparison.InvariantCultureIgnoreCase));
-            if (!res.Any())
-            {
-                res = list.Where(a => a.AlternativeNames.ContainsString(matchName) == true);
-            }
-
-            if (res.Any())
-            {
-                if (res.Count() == 1)
-                {
-                    return plugin.Client.GetIGDBGameParsed(ulong.Parse(res.First().Id));
-                }
-                else
-                {
-                    if (game.ReleaseDate != null)
-                    {
-                        var igdbGame = res.FirstOrDefault(a => a.ReleaseDate?.Year == game.ReleaseDate.Value.Year);
-                        if (igdbGame != null)
-                        {
-                            return plugin.Client.GetIGDBGameParsed(ulong.Parse(igdbGame.Id));
-                        }
+                        IgdbData = metadata;
                     }
                     else
                     {
-                        // If multiple matches are found and we don't have release date then prioritize older game
-                        if (res.All(a => a.ReleaseDate == null))
-                        {
-                            return plugin.Client.GetIGDBGameParsed(ulong.Parse(res.First().Id));
-                        }
-                        else
-                        {
-                            var igdbGame = res.OrderBy(a => a.ReleaseDate?.Year).First(a => a.ReleaseDate != null);
-                            return plugin.Client.GetIGDBGameParsed(ulong.Parse(igdbGame.Id));
-                        }
+                        IgdbData = new IgdbServerModels.ExpandedGame() { id = 0 };
                     }
                 }
+                catch (Exception e)
+                {
+                    logger.Error(e, "Failed to get IGDB metadata.");
+                    IgdbData = new IgdbServerModels.ExpandedGame() { id = 0 };
+                }
             }
-
-            return null;
-        }
-
-        private string ReplaceNumsForRomans(Match m)
-        {
-            return Roman.To(int.Parse(m.Value));
         }
     }
 }

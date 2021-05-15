@@ -1,6 +1,7 @@
-﻿Name: Bethesda Library Importer
-Author: Playnite
+﻿Id: _name__00000000-0000-0000-0000-000000000001
+Name: Generic Plugin
+Author: John Doe
 Version: 1.0
-Module: BethesdaLibrary.dll
-Type: GameLibrary
-Icon: Resources\bethesdaicon.png
+Module: _name_.dll
+Type: GenericPlugin
+Icon: icon.png

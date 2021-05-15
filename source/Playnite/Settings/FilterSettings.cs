@@ -186,7 +186,7 @@ namespace Playnite
                     IsUnInstalled ||
                     Hidden ||
                     Favorite ||
-                    !string.IsNullOrEmpty(Name) ||                    
+                    !string.IsNullOrEmpty(Name) ||
                     !string.IsNullOrEmpty(Version) ||
                     Series?.IsSet == true ||
                     Source?.IsSet == true ||
@@ -198,16 +198,17 @@ namespace Playnite
                     Category?.IsSet == true ||
                     Tag?.IsSet == true ||
                     Platform?.IsSet == true ||
-                    Library?.IsSet == true || 
+                    Library?.IsSet == true ||
                     CompletionStatus?.IsSet == true ||
                     UserScore?.IsSet == true ||
                     CriticScore?.IsSet == true ||
-                    CommunityScore?.IsSet == true || 
+                    CommunityScore?.IsSet == true ||
                     LastActivity?.IsSet == true ||
                     Added?.IsSet == true ||
-                    Modified?.IsSet == true || 
-                    ReleaseYear?.IsSet == true || 
-                    PlayTime?.IsSet == true;
+                    Modified?.IsSet == true ||
+                    ReleaseYear?.IsSet == true ||
+                    PlayTime?.IsSet == true ||
+                    Feature?.IsSet == true;
             }
         }
 
@@ -535,7 +536,7 @@ namespace Playnite
                 }
             }
         }
-        
+
         private FilterItemProperites library;
         public FilterItemProperites Library
         {
@@ -707,12 +708,31 @@ namespace Playnite
             }
         }
 
-        private bool suppressFilterChanges = false;
+        private FilterItemProperites feature;
+        public FilterItemProperites Feature
+        {
+            get
+            {
+                return feature;
+            }
+
+            set
+            {
+                if (feature != value)
+                {
+                    feature = value;
+                    OnPropertyChanged();
+                    OnFilterChanged(nameof(Feature));
+                }
+            }
+        }
+
+        public bool SuppressFilterChanges = false;
         public event EventHandler<FilterChangedEventArgs> FilterChanged;
 
         public void OnFilterChanged(string field)
         {
-            if (!suppressFilterChanges)
+            if (!SuppressFilterChanges)
             {
                 FilterChanged?.Invoke(this, new FilterChangedEventArgs(new List<string>() { field }));
             }
@@ -722,7 +742,7 @@ namespace Playnite
 
         public void OnFilterChanged(List<string> fields)
         {
-            if (!suppressFilterChanges)
+            if (!SuppressFilterChanges)
             {
                 FilterChanged?.Invoke(this, new FilterChangedEventArgs(fields));
             }
@@ -730,9 +750,9 @@ namespace Playnite
             OnPropertyChanged(nameof(IsActive));
         }
 
-        public void ClearFilters()
+        public void ClearFilters(bool notify = true)
         {
-            suppressFilterChanges = true;
+            SuppressFilterChanges = true;
             var filterChanges = new List<string>();
 
             if (Name != null)
@@ -891,8 +911,17 @@ namespace Playnite
                 filterChanges.Add(nameof(PlayTime));
             }
 
-            suppressFilterChanges = false;
-            OnFilterChanged(filterChanges);
+            if (Feature?.IsSet == true)
+            {
+                Feature = null;
+                filterChanges.Add(nameof(Feature));
+            }
+
+            SuppressFilterChanges = false;
+            if (notify)
+            {
+                OnFilterChanged(filterChanges);
+            }
         }
 
         #region Serialization Conditions
@@ -1005,6 +1034,11 @@ namespace Playnite
         public bool ShouldSerializePlayTime()
         {
             return PlayTime?.IsSet == true;
+        }
+
+        public bool ShouldSerializeFeature()
+        {
+            return Feature?.IsSet == true;
         }
 
         #endregion Serialization Conditions

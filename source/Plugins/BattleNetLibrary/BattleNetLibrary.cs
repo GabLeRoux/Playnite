@@ -90,7 +90,7 @@ namespace BattleNetLibrary
                         {
                             GameId = product.ProductId,
                             Source = "Battle.net",
-                            Name = product.Name,
+                            Name = product.Name.RemoveTrademarks(),
                             PlayAction = new GameAction()
                             {
                                 Type = GameActionType.File,
@@ -99,7 +99,8 @@ namespace BattleNetLibrary
                                 IsHandledByPlugin = true
                             },
                             InstallDirectory = prog.InstallLocation,
-                            IsInstalled = true
+                            IsInstalled = true,
+                            Platform = "PC"
                         };
 
                         // Check in case there are more versions of single games installed.
@@ -138,10 +139,11 @@ namespace BattleNetLibrary
                     {
                         GameId = product.ProductId,
                         Source = "Battle.net",
-                        Name = product.Name,
+                        Name = product.Name.RemoveTrademarks(),
                         PlayAction = GetGamePlayTask(product.ProductId),
                         InstallDirectory = prog.InstallLocation,
-                        IsInstalled = true
+                        IsInstalled = true,
+                        Platform = "PC"
                     };
 
                     // Check in case there are more versions of single games installed.
@@ -185,7 +187,8 @@ namespace BattleNetLibrary
                             {
                                 Source = "Battle.net",
                                 GameId = gameInfo.ProductId,
-                                Name = gameInfo.Name
+                                Name = gameInfo.Name.RemoveTrademarks(),
+                                Platform = "PC"
                             });
                         }
                     }
@@ -213,7 +216,8 @@ namespace BattleNetLibrary
                             {
                                 Source = "Battle.net",
                                 GameId = w3x.ProductId,
-                                Name = w3x.Name
+                                Name = w3x.Name,
+                                Platform = "PC"
                             });
                         }
                     }
@@ -237,7 +241,8 @@ namespace BattleNetLibrary
                             {
                                 Source = "Battle.net",
                                 GameId = d2x.ProductId,
-                                Name = d2x.Name
+                                Name = d2x.Name,
+                                Platform = "PC"
                             });
                         }
                     }
@@ -256,6 +261,11 @@ namespace BattleNetLibrary
         public override string Name => "Battle.net";
 
         public override Guid Id => Guid.Parse("E3C26A3D-D695-4CB7-A769-5FF7612C7EDD");
+
+        public override LibraryPluginCapabilities Capabilities { get; } = new LibraryPluginCapabilities
+        {
+            CanShutdownClient = true
+        };
 
         public override ISettings GetSettings(bool firstRunSettings)
         {
@@ -327,11 +337,12 @@ namespace BattleNetLibrary
 
             if (importError != null)
             {
-                PlayniteApi.Notifications.Add(
+                PlayniteApi.Notifications.Add(new NotificationMessage(
                     dbImportMessageId,
                     string.Format(PlayniteApi.Resources.GetString("LOCLibraryImportError"), Name) +
                     System.Environment.NewLine + importError.Message,
-                    NotificationType.Error);
+                    NotificationType.Error,
+                    () => OpenSettingsView()));
             }
             else
             {

@@ -58,14 +58,13 @@ namespace PlayniteServices
             logger.Warn(exception, message);
         }
 
-
         public static void ConfigureLogger()
         {
             var config = new LoggingConfiguration();
 #if DEBUG
             var consoleTarget = new ColoredConsoleTarget()
             {
-                Layout = @"${level:uppercase=true}|${logger}:${message}${exception}"
+                Layout = @"${level:uppercase=true}|${logger}:${message}${onexception:${newline}${exception}}"
             };
 
             config.AddTarget("console", consoleTarget);
@@ -76,12 +75,12 @@ namespace PlayniteServices
             var fileTarget = new FileTarget()
             {
                 FileName = Path.Combine(Paths.ExecutingDirectory, "playnite.log"),
-                Layout = "${longdate}|${level:uppercase=true}:${message}${exception:format=toString}",
+                Layout = "${longdate}|${level:uppercase=true}:${message}${onexception:${newline}${exception:format=toString}}",
                 KeepFileOpen = false,
                 ArchiveFileName = Path.Combine(Paths.ExecutingDirectory, "playnite.{#####}.log"),
                 ArchiveAboveSize = 4096000,
                 ArchiveNumbering = ArchiveNumberingMode.Sequence,
-                MaxArchiveFiles = 2
+                MaxArchiveFiles = 10
             };
 
             config.AddTarget("file", fileTarget);

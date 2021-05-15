@@ -44,6 +44,19 @@ namespace EpicLibrary
                 }
 
                 var manifest = manifests.FirstOrDefault(a => a.AppName == app.AppName);
+
+                // DLC
+                if (manifest.AppName != manifest.MainGameAppName)
+                {
+                    continue;
+                }
+
+                // UE plugins
+                if (manifest.AppCategories?.Any(a => a == "plugins" || a == "plugins/engine") == true)
+                {
+                    continue;
+                }
+
                 var game = new GameInfo()
                 {
                     Source = "Epic",
@@ -53,13 +66,14 @@ namespace EpicLibrary
                     IsInstalled = true,
                     PlayAction = new GameAction()
                     {
-                        Type = GameActionType.File,
-                        Path = manifest?.LaunchExecutable,
-                        WorkingDir = ExpandableVariables.InstallationDirectory,
+                        Type = GameActionType.URL,
+                        Path = string.Format(EpicLauncher.GameLaunchUrlMask, app.AppName),
                         IsHandledByPlugin = true
-                    }
+                    },
+                    Platform = "PC"
                 };
 
+                game.Name = game.Name.RemoveTrademarks();
                 games.Add(game.GameId, game);
             }
 
@@ -79,22 +93,15 @@ namespace EpicLibrary
 
             foreach (var gameAsset in assets.Where(a => a.@namespace != "ue"))
             {
-                var cacheFile = Paths.GetSafeFilename($"{gameAsset.@namespace}_{gameAsset.catalogItemId}_{gameAsset.buildVersion}.json");
+                var cacheFile = Paths.GetSafePathName($"{gameAsset.@namespace}_{gameAsset.catalogItemId}_{gameAsset.buildVersion}.json");
                 cacheFile = Path.Combine(cacheDir, cacheFile);
-                CatalogItem catalogItem = null;
-
-                if (File.Exists(cacheFile))
+                var catalogItem = accountApi.GetCatalogItem(gameAsset.@namespace, gameAsset.catalogItemId, cacheFile);
+                if (catalogItem?.categories?.Any(a => a.path == "applications") != true)
                 {
-                    catalogItem = Serialization.FromJsonFile<CatalogItem>(cacheFile);
-                }
-                else
-                {
-                    catalogItem = accountApi.GetCatalogItem(gameAsset.@namespace, gameAsset.catalogItemId);
-                    FileSystem.PrepareSaveFile(cacheFile);
-                    File.WriteAllText(cacheFile, Serialization.ToJson(catalogItem));
+                    continue;
                 }
 
-                if (catalogItem?.categories?.Where(a => a.path == "applications").Any() != true)
+                if (catalogItem?.categories?.Any(a => a.path == "dlc") == true)
                 {
                     continue;
                 }
@@ -103,7 +110,8 @@ namespace EpicLibrary
                 {
                     Source = "Epic",
                     GameId = gameAsset.appName,
-                    Name = catalogItem.title,
+                    Name = catalogItem.title.RemoveTrademarks(),
+                    Platform = "PC"
                 });
             }
 
@@ -120,6 +128,11 @@ namespace EpicLibrary
 
         public override Guid Id => Guid.Parse("00000002-DBD1-46C6-B5D0-B1BA559D10E4");
 
+        public override LibraryPluginCapabilities Capabilities { get; } = new LibraryPluginCapabilities
+        {
+            CanShutdownClient = true
+        };
+
         public override ISettings GetSettings(bool firstRunSettings)
         {
             return LibrarySettings;
@@ -132,7 +145,7 @@ namespace EpicLibrary
 
         public override IGameController GetGameController(Game game)
         {
-            return new EpicGameController(game, playniteApi);
+            return new EpicGameController(game, playniteApi, LibrarySettings);
         }
 
         public override IEnumerable<GameInfo> GetGames()
@@ -191,11 +204,12 @@ namespace EpicLibrary
 
             if (importError != null)
             {
-                playniteApi.Notifications.Add(
+                playniteApi.Notifications.Add(new NotificationMessage(
                     dbImportMessageId,
                     string.Format(playniteApi.Resources.GetString("LOCLibraryImportError"), Name) +
                     System.Environment.NewLine + importError.Message,
-                    NotificationType.Error);
+                    NotificationType.Error,
+                    () => OpenSettingsView()));
             }
             else
             {

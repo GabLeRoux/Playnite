@@ -87,8 +87,9 @@ namespace GogLibrary
                     InstallDirectory = Paths.FixSeparators(program.InstallLocation),
                     GameId = gameId,
                     Source = "GOG",
-                    Name = program.DisplayName,
-                    IsInstalled = true
+                    Name = program.DisplayName.RemoveTrademarks(),
+                    IsInstalled = true,
+                    Platform = "PC"
                 };
 
                 var tasks = GetGameTasks(game.GameId, game.InstallDirectory);
@@ -115,7 +116,7 @@ namespace GogLibrary
                 {
                     throw new Exception("User is not logged in to GOG account.");
                 }
-                            
+
                 var libGames = api.GetOwnedGames();
                 if (libGames == null)
                 {
@@ -147,11 +148,12 @@ namespace GogLibrary
                 {
                     Source = "GOG",
                     GameId = game.game.id,
-                    Name = game.game.title,
+                    Name = game.game.title.RemoveTrademarks(),
                     Links = new List<Link>()
                     {
                         new Link("Store", @"https://www.gog.com" + game.game.url)
-                    }
+                    },
+                    Platform = "PC"
                 };
 
                 if (game.stats?.Keys?.Any() == true)
@@ -175,8 +177,14 @@ namespace GogLibrary
 
         public override Guid Id => Guid.Parse("AEBE8B7C-6DC3-4A66-AF31-E7375C6B5E9E");
 
+        public override LibraryPluginCapabilities Capabilities { get; } = new LibraryPluginCapabilities
+        {
+            CanShutdownClient = true
+        };
+
         public override ISettings GetSettings(bool firstRunSettings)
         {
+            LibrarySettings.IsFirstRunUse = firstRunSettings;
             return LibrarySettings;
         }
 
@@ -245,11 +253,12 @@ namespace GogLibrary
 
             if (importError != null)
             {
-                PlayniteApi.Notifications.Add(
+                PlayniteApi.Notifications.Add(new NotificationMessage(
                     dbImportMessageId,
                     string.Format(PlayniteApi.Resources.GetString("LOCLibraryImportError"), Name) +
                     System.Environment.NewLine + importError.Message,
-                    NotificationType.Error);
+                    NotificationType.Error,
+                    () => OpenSettingsView()));
             }
             else
             {
@@ -265,6 +274,5 @@ namespace GogLibrary
         }
 
         #endregion ILibraryPlugin
-
     }
 }

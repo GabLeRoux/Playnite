@@ -23,6 +23,9 @@ using System.ComponentModel;
 using Playnite.Windows;
 using Polly;
 using System.Windows.Media;
+using Playnite.SDK.Events;
+using System.Windows.Threading;
+using System.Net;
 
 namespace Playnite
 {
@@ -35,6 +38,8 @@ namespace Playnite
         private PipeService pipeService;
         private PipeServer pipeServer;
         private XInputDevice xdevice;
+        private System.Threading.Timer updateCheckTimer;
+        private bool installingAddon = false;
 
         private bool isActive;
         public bool IsActive
@@ -61,6 +66,10 @@ namespace Playnite
         public PlayniteAPI Api { get; set; }
         public GameControllerFactory Controllers { get; set; }
         public CmdLineOptions CmdLine { get; set; }
+        public DpiScale DpiScale { get; set; } = new DpiScale(1, 1);
+        public ComputerScreen CurrentScreen { get; set; } = Computer.GetPrimaryScreen();
+        public DiscordManager Discord { get; set; }
+        public SynchronizationContext SyncContext { get; private set; }
 
         public static Application CurrentNative { get; private set; }
         public static PlayniteApplication Current { get; private set; }
@@ -76,6 +85,16 @@ namespace Playnite
                 throw new Exception("Only one application instance is allowed.");
             }
 
+            // TODO: remove after switch to .NET 5
+            // Fixes various network issues on 2004+ Win10 if TLS 1.3 is forced via registry.
+            if (Computer.IsTLS13SystemWideEnabled())
+            {
+                logger.Warn("System wide TLS 1.3 is enabled, forcing 1.2.");
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+            }
+
+            SyncContext = new DispatcherSynchronizationContext(nativeApp.Dispatcher);
+            SynchronizationContext.SetSynchronizationContext(SyncContext);
             CmdLine = cmdLine;
             Mode = mode;
             Current = this;
@@ -86,11 +105,51 @@ namespace Playnite
                 AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             }
 
+            if (!CmdLine.MasterInstance)
+            {
+                if (CheckOtherInstances() || CmdLine.Shutdown)
+                {
+                    resourcesReleased = true;
+                    CurrentNative.Shutdown(0);
+                    return;
+                }
+            }
+
+            appMutex = new Mutex(true, instanceMuxet);
+
+            try
+            {
+                pipeService = new PipeService();
+                pipeService.CommandExecuted += PipeService_CommandExecuted;
+                pipeServer = new PipeServer(PlayniteSettings.GetAppConfigValue("PipeEndpoint"));
+                pipeServer.StartServer(pipeService);
+            }
+            catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(exc, "Failed to start pipe service.");
+            }
+
             PlayniteSettings.MigrateSettingsConfig();
             AppSettings = PlayniteSettings.LoadSettings();
+
+            var relaunchPath = string.Empty;
             if (AppSettings.StartInFullscreen && mode == ApplicationMode.Desktop && !CmdLine.StartInDesktop)
             {
-                ProcessStarter.StartProcess(PlaynitePaths.FullscreenExecutablePath, CmdLine.ToString());
+                relaunchPath = PlaynitePaths.FullscreenExecutablePath;
+            }
+
+            if (CmdLine.StartInDesktop && mode != ApplicationMode.Desktop)
+            {
+                relaunchPath = PlaynitePaths.DesktopExecutablePath;
+            }
+            else if (CmdLine.StartInFullscreen && mode != ApplicationMode.Fullscreen)
+            {
+                relaunchPath = PlaynitePaths.FullscreenExecutablePath;
+            }
+
+            if (!relaunchPath.IsNullOrEmpty())
+            {
+                ProcessStarter.StartProcess(relaunchPath, CmdLine.ToString());
                 CurrentNative.Shutdown(0);
                 return;
             }
@@ -102,7 +161,7 @@ namespace Playnite
             CurrentNative.Deactivated += Application_Deactivated;
 
             OnPropertyChanged(nameof(AppSettings));
-            var defaultTheme = new ThemeDescription()
+            var defaultTheme = new ThemeManifest()
             {
                 DirectoryName = defaultThemeName,
                 DirectoryPath = Path.Combine(PlaynitePaths.ThemesProgramPath, ThemeManager.GetThemeRootDir(Mode), defaultThemeName),
@@ -112,15 +171,20 @@ namespace Playnite
             try
             {
                 var installed = ExtensionInstaller.InstallExtensionQueue();
-                if (installed?.Mode == Mode)
+                var installedTheme = installed.FirstOrDefault(a => a is ThemeManifest);
+                if (installedTheme != null)
                 {
-                    if (installed.Mode == ApplicationMode.Desktop)
+                    var theme = installedTheme as ThemeManifest;
+                    if (theme.Mode == Mode)
                     {
-                        AppSettings.Theme = installed.DirectoryName;
-                    }
-                    else
-                    {
-                        AppSettings.Fullscreen.Theme = installed.DirectoryName;
+                        if (theme.Mode == ApplicationMode.Desktop)
+                        {
+                            AppSettings.Theme = theme.DirectoryName;
+                        }
+                        else
+                        {
+                            AppSettings.Fullscreen.Theme = theme.DirectoryName;
+                        }
                     }
                 }
             }
@@ -132,10 +196,10 @@ namespace Playnite
             ThemeManager.SetDefaultTheme(defaultTheme);
 
             // Theme must be set BEFORE default app resources are initialized for ThemeFile markup to apply custom theme's paths.
-            ThemeDescription customTheme = null;
-            if (CmdLine.ForceDefaultTheme)
+            ThemeManifest customTheme = null;
+            if (CmdLine.ForceDefaultTheme || CmdLine.SafeStartup)
             {
-                logger.Info("Default theme forced by cmdline.");
+                logger.Warn("Default theme forced by cmdline.");
             }
             else
             {
@@ -146,6 +210,15 @@ namespace Playnite
                     if (customTheme == null)
                     {
                         logger.Error($"Failed to apply theme {theme}, theme not found.");
+                        if (mode == ApplicationMode.Desktop)
+                        {
+                            AppSettings.Theme = "Default";
+                        }
+                        else
+                        {
+                            AppSettings.Fullscreen.Theme = "Default";
+                        }
+
                         ThemeManager.SetCurrentTheme(defaultTheme);
                     }
                     else
@@ -243,8 +316,10 @@ namespace Playnite
 
         public abstract void ShowWindowsNotification(string title, string body, Action action);
 
+        public abstract void SwitchAppMode(ApplicationMode mode);
+
         private void Application_SessionEnding(object sender, SessionEndingCancelEventArgs e)
-        {            
+        {
             logger.Info("Shutting down application because of session ending.");
             // Don't dispose CefSharp here because of bug in CefSharp during system shutdown
             // https://github.com/JosefNemec/Playnite/issues/866
@@ -255,28 +330,51 @@ namespace Playnite
         private void Application_Exit(object sender, ExitEventArgs e)
         {
             ReleaseResources();
-            appMutex?.ReleaseMutex();
         }
 
         private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             var exception = (Exception)e.ExceptionObject;
-            logger.Error(exception, "Unhandled exception occured.");            
-            var model = new CrashHandlerViewModel(
-                new CrashHandlerWindowFactory(),
-                Dialogs,
-                new ResourceProvider(),
-                Mode);
-            model.Exception = exception.ToString();
-            model.OpenView();
+            var crashInfo = Exceptions.GetExceptionInfo(exception, Extensions);
+            logger.Error(exception, "Unhandled exception occured.");
+            CrashHandlerViewModel crashModel = null;
+            if (crashInfo.IsExtensionCrash)
+            {
+                crashModel = new CrashHandlerViewModel(
+                    new ExtensionCrashHandlerWindowFactory(),
+                    Dialogs,
+                    new ResourceProvider(),
+                    Mode,
+                    crashInfo,
+                    AppSettings);
+            }
+            else
+            {
+                crashModel = new CrashHandlerViewModel(
+                    new CrashHandlerWindowFactory(),
+                    Dialogs,
+                    new ResourceProvider(),
+                    Mode);
+            }
+
+            crashModel.OpenView();
             Process.GetCurrentProcess().Kill();
         }
 
         private void Application_Startup(object sender, StartupEventArgs e)
         {
-            logger.Info($"Application started from '{PlaynitePaths.ProgramPath}', with '{string.Join(",", e.Args)}' arguments.");            
+            logger.Info($"Application started from '{PlaynitePaths.ProgramPath}'");
+            SDK.Data.Markup.Init(new MarkupConverter());
+            SDK.Data.Serialization.Init(new DataSerializer());
             Startup();
             logger.Info($"Application {CurrentVersion} started");
+            foreach (var fail in Extensions.FailedExtensions)
+            {
+                Api.Notifications.Add(new NotificationMessage(
+                    fail.DirectoryPath,
+                    ResourceProvider.GetString(LOC.SpecificExtensionLoadError).Format(fail.Name),
+                    NotificationType.Error));
+            }
         }
 
         private void PipeService_CommandExecuted(object sender, CommandExecutedEventArgs args)
@@ -307,6 +405,56 @@ namespace Playnite
                         logger.Error($"Can't start game, failed to parse game id: {args.Args}");
                     }
 
+                    break;
+
+                case CmdlineCommand.UriRequest:
+                    (Api.UriHandler as PlayniteUriHandler).ProcessUri(args.Args);
+                    break;
+
+                case CmdlineCommand.ExtensionInstall:
+                    if (installingAddon)
+                    {
+                        return;
+                    }
+
+                    var extPath = args.Args;
+                    if (!File.Exists(extPath))
+                    {
+                        logger.Error($"Cannot install extension, file doesn't exists: {extPath}");
+                        return;
+                    }
+
+                    installingAddon = true;
+                    var ext = Path.GetExtension(extPath).ToLower();
+                    if (ext.Equals(PlaynitePaths.PackedThemeFileExtention, StringComparison.OrdinalIgnoreCase))
+                    {
+                        InstallThemeFile(extPath);
+                    }
+                    else if (ext.Equals(PlaynitePaths.PackedExtensionFileExtention, StringComparison.OrdinalIgnoreCase))
+                    {
+                        InstallExtensionFile(extPath);
+                    }
+
+                    installingAddon = false;
+                    break;
+
+                case CmdlineCommand.SwitchMode:
+                    if (args.Args == "desktop")
+                    {
+                        SyncContext.Post(_ => SwitchAppMode(ApplicationMode.Desktop), null);
+                    }
+                    else if (args.Args == "fullscreen")
+                    {
+                        SyncContext.Post(_ => SwitchAppMode(ApplicationMode.Fullscreen), null);
+                    }
+                    else
+                    {
+                        logger.Error($"Can't switch to uknwon application mode: {args.Args}");
+                    }
+                    break;
+
+                case CmdlineCommand.Shutdown:
+                    Quit();
                     break;
 
                 default:
@@ -347,6 +495,26 @@ namespace Playnite
                             {
                                 client.InvokeCommand(CmdlineCommand.Start, CmdLine.Start);
                             }
+                            else if (!CmdLine.UriData.IsNullOrEmpty())
+                            {
+                                client.InvokeCommand(CmdlineCommand.UriRequest, CmdLine.UriData);
+                            }
+                            else if (!CmdLine.InstallExtension.IsNullOrEmpty())
+                            {
+                                client.InvokeCommand(CmdlineCommand.ExtensionInstall, CmdLine.InstallExtension);
+                            }
+                            else if (CmdLine.StartInDesktop)
+                            {
+                                client.InvokeCommand(CmdlineCommand.SwitchMode, "desktop");
+                            }
+                            else if (CmdLine.StartInFullscreen)
+                            {
+                                client.InvokeCommand(CmdlineCommand.SwitchMode, "fullscreen");
+                            }
+                            else if (CmdLine.Shutdown)
+                            {
+                                client.InvokeCommand(CmdlineCommand.Shutdown, null);
+                            }
                             else
                             {
                                 client.InvokeCommand(CmdlineCommand.Focus, string.Empty);
@@ -355,9 +523,9 @@ namespace Playnite
                 }
                 catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
                 {
-                    Dialogs.ShowErrorMessage(
-                        ResourceProvider.GetString("LOCStartGenericError"),
-                        ResourceProvider.GetString("LOCStartupError"));
+                    MessageBox.Show(
+                        "Playnite failed to start. Please close all other instances and try again.",
+                        "Startup Error");
                     logger.Error(exc, "Can't process communication with other instances.");
                 }
 
@@ -369,27 +537,15 @@ namespace Playnite
             else
             {
                 var curProcess = Process.GetCurrentProcess();
-                var processes = Process.GetProcessesByName(curProcess.ProcessName);
-                if (processes.Count() > 1)
+                var processes = Process.GetProcesses().Where(a => a.ProcessName.StartsWith("Playnite.")).ToList();
+                // In case multiple processes end up in this branch,
+                // the process with highest process id gets to live.
+                if (processes.Count > 1 && processes.Max(a => a.Id) != curProcess.Id)
                 {
-                    logger.Info("Another faster instance is already running, shutting down.");
+                    logger.Info("Another process instance(s) is already running, shutting down.");
                     resourcesReleased = true;
                     CurrentNative.Shutdown(0);
                     return true;
-                }
-
-                appMutex = new Mutex(true, instanceMuxet);
-
-                try
-                {
-                    pipeService = new PipeService();
-                    pipeService.CommandExecuted += PipeService_CommandExecuted;
-                    pipeServer = new PipeServer(PlayniteSettings.GetAppConfigValue("PipeEndpoint"));
-                    pipeServer.StartServer(pipeService);
-                }
-                catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
-                {
-                    logger.Error(exc, "Failed to start pipe service.");
                 }
             }
 
@@ -403,6 +559,18 @@ namespace Playnite
             {
                 logger.Info("Enabling software rendering.");
                 System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            }
+
+            if (CmdLine.ClearWebCache)
+            {
+                try
+                {
+                    FileSystem.DeleteDirectory(PlaynitePaths.BrowserCachePath);
+                }
+                catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
+                {
+                    logger.Error(exc, "Failed to clear CEF cache.");
+                }
             }
 
             try
@@ -430,19 +598,104 @@ namespace Playnite
 
             try
             {
-                PlayniteSettings.SetBootupStateRegistration(AppSettings.StartOnBoot);
+                SystemIntegration.SetBootupStateRegistration(AppSettings.StartOnBoot);
             }
             catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
             {
                 logger.Error(exc, "Failed to register Playnite to start on boot.");
             }
+
+            try
+            {
+                SystemIntegration.RegisterPlayniteUriProtocol();
+            }
+            catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(exc, "Failed to register playnite URI scheme.");
+            }
+
+            try
+            {
+                SystemIntegration.RegisterFileExtensions();
+            }
+            catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(exc, "Failed to register playnite extensions.");
+            }
         }
 
         public void ProcessArguments()
         {
+            (Api.UriHandler as PlayniteUriHandler).Handlers.Add("playnite", ProcessUriRequest);
             if (!CmdLine.Start.IsNullOrEmpty())
             {
                 PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.Start, CmdLine.Start));
+            }
+            else if (!CmdLine.UriData.IsNullOrEmpty())
+            {
+                PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.UriRequest, CmdLine.UriData));
+            }
+            else if (!CmdLine.InstallExtension.IsNullOrEmpty())
+            {
+                PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.ExtensionInstall, CmdLine.InstallExtension));
+            }
+            else if (CmdLine.StartInDesktop)
+            {
+                PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.SwitchMode, "desktop"));
+            }
+            else if (CmdLine.StartInFullscreen)
+            {
+                PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.SwitchMode, "fullscreen"));
+            }
+            else if (CmdLine.Shutdown)
+            {
+                PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.Shutdown, null));
+            }
+        }
+
+        internal void ProcessUriRequest(PlayniteUriEventArgs args)
+        {
+            var arguments = args.Arguments;
+            if (args.Arguments.Count() == 0)
+            {
+                return;
+            }
+
+            var command = arguments[0];
+            switch (command)
+            {
+                case UriCommands.CreateDiag:
+                    CrashHandlerViewModel.CreateDiagPackage(Dialogs);
+                    break;
+
+                case UriCommands.StartGame:
+                    if (arguments.Count() != 2)
+                    {
+                        return;
+                    }
+
+                    if (Guid.TryParse(arguments[1], out var gameId))
+                    {
+                        var game = Database.Games[gameId];
+                        if (game == null)
+                        {
+                            logger.Error($"Cannot start game, game {arguments[1]} not found.");
+                        }
+                        else
+                        {
+                            GamesEditor.PlayGame(game);
+                        }
+                    }
+                    else
+                    {
+                        logger.Error($"Can't start game, failed to parse game id: {arguments[1]}");
+                    }
+
+                    break;
+
+                default:
+                    logger.Warn($"Uknown URI command {command}");
+                    break;
             }
         }
 
@@ -450,11 +703,19 @@ namespace Playnite
         {
             if (enableXinput)
             {
-                xdevice = new XInputDevice(InputManager.Current, this)
+                try
                 {
-                    SimulateAllKeys = false,
-                    SimulateNavigationKeys = true
-                };
+                    xdevice = new XInputDevice(InputManager.Current, this)
+                    {
+                        SimulateAllKeys = false,
+                        SimulateNavigationKeys = true
+                    };
+                }
+                catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+                {
+                    logger.Error(e, "Failed intitialize XInput");
+                    Dialogs.ShowErrorMessage(ResourceProvider.GetString("LOCXInputInitErrorMessage"), "");
+                }
             }
         }
 
@@ -465,19 +726,45 @@ namespace Playnite
             CurrentNative.Shutdown(0);
         }
 
+        public void QuitAndStart(string path, string arguments, bool asAdmin = false)
+        {
+            logger.Info("Shutting down Playnite and starting an app.");
+            ReleaseResources();
+            ProcessStarter.StartProcess(path, arguments, asAdmin);
+            CurrentNative.Shutdown(0);
+        }
+
         public abstract void Restart();
 
         public abstract void Restart(CmdLineOptions options);
 
         public virtual void ReleaseResources(bool releaseCefSharp = true)
         {
-            logger.Debug("Releasing Playnite resources...");
             if (resourcesReleased)
             {
                 return;
             }
 
-            var progressModel = new ProgressViewViewModel(new ProgressWindowFactory(), () =>
+            logger.Debug("Releasing Playnite resources...");
+            CurrentNative.Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    appMutex?.ReleaseMutex();
+                }
+                catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+                {
+                    // Only happens when trying to release mutext created by a different process.
+                    // This shouldn't normally happen since the mutex is released here before starting another instance.
+                    logger.Error(e, "Failed to release app mutext.");
+                }
+            });
+
+            pipeServer?.StopServer();
+            Discord?.Dispose();
+            updateCheckTimer?.Dispose();
+            Extensions?.NotifiyOnApplicationStopped();
+            var progressModel = new ProgressViewViewModel(new ProgressWindowFactory(), (_) =>
             {
                 try
                 {
@@ -488,14 +775,14 @@ namespace Playnite
 
                     GamesEditor?.Dispose();
                     AppSettings?.SaveSettings();
-                    Extensions?.Dispose();
                     Controllers?.Dispose();
+                    Extensions?.Dispose();
                 }
                 catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
                 {
                     logger.Error(exc, "Failed to dispose Playnite objects.");
                 }
-            }, ResourceProvider.GetString("LOCClosingPlaynite"));
+            }, new GlobalProgressOptions("LOCClosingPlaynite"));
 
             progressModel.ActivateProgress();
 
@@ -514,67 +801,66 @@ namespace Playnite
             resourcesReleased = true;
         }
 
+        private void UpdateCheckerCallback(object state)
+        {
+            try
+            {
+                var updater = new Updater(this);
+                if (updater.IsUpdateAvailable)
+                {
+                    var updateTitle = ResourceProvider.GetString("LOCUpdaterWindowTitle");
+                    var updateBody = ResourceProvider.GetString("LOCUpdateIsAvailableNotificationBody");
+                    if (!Current.IsActive)
+                    {
+                        ShowWindowsNotification(updateTitle, updateBody, () =>
+                        {
+                            Restore();
+                            new UpdateViewModel(
+                                updater,
+                                new UpdateWindowFactory(),
+                                new ResourceProvider(),
+                                Dialogs).OpenView();
+                        });
+                    }
+
+                    Api.Notifications.Add(
+                        new NotificationMessage("UpdateAvailable",
+                        updateBody,
+                        NotificationType.Info, () =>
+                        {
+                            new UpdateViewModel(
+                                updater,
+                                new UpdateWindowFactory(),
+                                new ResourceProvider(),
+                                Dialogs).OpenView();
+                        }));
+                    updateCheckTimer.Dispose();
+                }
+            }
+            catch (Exception exc)
+            {
+                logger.Warn(exc, "Failed to process update.");
+            }
+        }
+
         public async Task StartUpdateCheckerAsync()
         {
             if (PlayniteEnvironment.InOfflineMode)
             {
                 return;
             }
-            
+
             await Task.Delay(Common.Timer.SecondsToMilliseconds(5));
             if (GlobalTaskHandler.IsActive)
             {
                 await GlobalTaskHandler.ProgressTask;
             }
 
-#pragma warning disable CS4014
-            Task.Run(async () =>
-            {
-                var updater = new Updater(this);
-                while (true)
-                {
-                    try
-                    {
-                        if (updater.IsUpdateAvailable)
-                        {
-                            var updateTitle = ResourceProvider.GetString("LOCUpdaterWindowTitle");
-                            var updateBody = ResourceProvider.GetString("LOCUpdateIsAvailableNotificationBody");
-                            if (!Current.IsActive)
-                            {
-                                ShowWindowsNotification(updateTitle, updateBody, () =>
-                                {
-                                    Restore();
-                                    new UpdateViewModel(
-                                        updater,
-                                        new UpdateWindowFactory(),
-                                        new ResourceProvider(),
-                                        Dialogs).OpenView();
-                                });
-                            }
-
-                            Api.Notifications.Add(
-                                new NotificationMessage("UpdateAvailable",
-                                updateBody,
-                                NotificationType.Info, () =>
-                                {
-                                    new UpdateViewModel(
-                                        updater,
-                                        new UpdateWindowFactory(),
-                                        new ResourceProvider(),
-                                        Dialogs).OpenView();
-                                }));
-                            return;
-                        }
-                    }
-                    catch (Exception exc)
-                    {
-                        logger.Warn(exc, "Failed to process update.");
-                    }
-
-                    await Task.Delay(Common.Timer.HoursToMilliseconds(4));
-                }
-            });
-#pragma warning restore CS4014
+            updateCheckTimer = new System.Threading.Timer(
+                UpdateCheckerCallback,
+                null,
+                0,
+                Common.Timer.HoursToMilliseconds(4));
         }
 
         public async Task SendUsageDataAsync()
@@ -651,7 +937,7 @@ namespace Playnite
             if (GameDatabase.GetMigrationRequired(AppSettings.DatabasePath))
             {
                 var migrationProgress = new ProgressViewViewModel(new ProgressWindowFactory(),
-                () =>
+                (_) =>
                 {
                     if (AppSettings.DatabasePath.EndsWith(".db", StringComparison.OrdinalIgnoreCase))
                     {
@@ -687,9 +973,9 @@ namespace Playnite
                     {
                         GameDatabase.MigrateNewDatabaseFormat(GameDatabase.GetFullDbPath(AppSettings.DatabasePath));
                     }
-                }, ResourceProvider.GetString("LOCDBUpgradeProgress"));
+                }, new GlobalProgressOptions("LOCDBUpgradeProgress"));
 
-                if (migrationProgress.ActivateProgress() != true)
+                if (migrationProgress.ActivateProgress().Result != true)
                 {
                     logger.Error(migrationProgress.FailException, "Failed to migrate database to new version.");
                     var message = ResourceProvider.GetString("LOCDBUpgradeFail");
@@ -704,6 +990,112 @@ namespace Playnite
             }
 
             return true;
+        }
+
+        public void UpdateScreenInformation(Controls.WindowBase window)
+        {
+            try
+            {
+                DpiScale = VisualTreeHelper.GetDpi(window);
+                CurrentScreen = window.GetScreen();
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                DpiScale = new DpiScale(1, 1);
+                CurrentScreen = Computer.GetPrimaryScreen();
+                logger.Error(e, $"Failed to get window information for main {Mode} window.");
+            }
+        }
+
+        public void InstallThemeFile(string themeFile)
+        {
+            try
+            {
+                ExtensionInstaller.VerifyThemePackage(themeFile);
+                var desc = ExtensionInstaller.GetPackedThemeManifest(themeFile);
+                desc.VerifyManifest();
+
+                if (new Version(desc.ThemeApiVersion).Major != ThemeManager.GetApiVersion(desc.Mode).Major)
+                {
+                    throw new Exception(ResourceProvider.GetString("LOCGeneralExtensionInstallApiVersionFails"));
+                }
+
+                var message = string.Format(ResourceProvider.GetString("LOCThemeInstallPrompt"),
+                    desc.Name, desc.Author, desc.Version);
+                var existing = ThemeManager.GetAvailableThemes(desc.Mode).FirstOrDefault(a => a.Id == desc.Id);
+                if (existing != null)
+                {
+                    message = string.Format(ResourceProvider.GetString("LOCThemeUpdatePrompt"),
+                        desc.Name, existing.Version, desc.Version);
+                }
+
+                if (Dialogs.ShowMessage(
+                        message,
+                        ResourceProvider.GetString("LOCGeneralExtensionInstallTitle"),
+                        MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                {
+                    ExtensionInstaller.QueuePackageInstall(themeFile);
+                    if (Dialogs.ShowMessage(
+                        ResourceProvider.GetString("LOCExtInstallationRestartNotif"),
+                        ResourceProvider.GetString("LOCSettingsRestartTitle"),
+                        MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                    {
+                        Restart(new CmdLineOptions()
+                        {
+                            SkipLibUpdate = true,
+                        });
+                    };
+                }
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(e, "Failed to install theme.");
+                Dialogs.ShowErrorMessage(
+                    string.Format(ResourceProvider.GetString("LOCThemeInstallFail"), e.Message), "");
+            }
+        }
+
+        public void InstallExtensionFile(string extensionFile)
+        {
+            try
+            {
+                ExtensionInstaller.VerifyExtensionPackage(extensionFile);
+                var desc = ExtensionInstaller.GetPackedExtensionManifest(extensionFile);
+                desc.VerifyManifest();
+
+                var message = string.Format(ResourceProvider.GetString("LOCExtensionInstallPrompt"),
+                    desc.Name, desc.Author, desc.Version);
+                var existing = ExtensionFactory.GetExtensionDescriptors().FirstOrDefault(a => a.Id == desc.Id);
+                if (existing != null)
+                {
+                    message = string.Format(ResourceProvider.GetString("LOCExtensionUpdatePrompt"),
+                        desc.Name, existing.Version, desc.Version);
+                }
+
+                if (Dialogs.ShowMessage(
+                        message,
+                        ResourceProvider.GetString("LOCGeneralExtensionInstallTitle"),
+                        MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                {
+                    ExtensionInstaller.QueuePackageInstall(extensionFile);
+                    if (Dialogs.ShowMessage(
+                        ResourceProvider.GetString("LOCExtInstallationRestartNotif"),
+                        ResourceProvider.GetString("LOCSettingsRestartTitle"),
+                        MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                    {
+                        Restart(new CmdLineOptions()
+                        {
+                            SkipLibUpdate = true,
+                        });
+                    };
+                }
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(e, "Failed to install extension.");
+                Dialogs.ShowErrorMessage(
+                    string.Format(ResourceProvider.GetString("LOCExtensionInstallFail"), e.Message), "");
+            }
         }
     }
 }
